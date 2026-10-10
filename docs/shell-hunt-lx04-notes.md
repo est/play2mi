@@ -14,7 +14,7 @@ LX01 那套 Linux/OpenWrt 固件里确实存在一条真实的 root RCE 链（`t
 
 1. `play_music_url` 信封内真正起作用的只有 `stream.url`；`audio_id`/`cp{...}`/`list_params`
    全是伪装"小微歌单"的占位符（首现于 `MiService@8fb49ee`，抓包复刻，非官方下发）。
-2. LX01 固件静态审计定位出一个 uncached 的 RCE sink：`mico-helper` 用 `pipe_exe`
+2. LX01 固件静态审计定位出一个无过滤的 RCE sink：`mico-helper` 用 `pipe_exe`
    （`vsnprintf → popen`，无任何转义）执行 `/usr/sbin/tts_play.sh '%s' &`，
    文本里带 `'` 即可逃逸，root 运行。**未动态验证**（云端 path `notify` 被 400 拒）。
 3. LX04 是 Android（MT8167），mico 原生 daemon 全被替换成 `MicoLauncher.apk` 里的 Java 实现。
@@ -51,7 +51,7 @@ unsquashfs -d rootfs rootfs.sqsh   # 65 个 .sh、70+ 个 mico 二进制
 
 | 脚本 | 用途 |
 |---|---|
-| `runsb.py` / `runs.py` | 扫 ELF 找 stride-24 的 `{name,handler,z1,z2,policy,cnt}` 连续 run → **自动抠出 ubus 对象的完整方法表 + policy（参数+类型）** |
+| `walktbl.py` / `runs.py` | 扫 ELF 找 stride-24 的 `{name,handler,z1,z2,policy,cnt}` 连续 run → **自动抠出 ubus 对象的完整方法表 + policy（参数+类型）** |
 | `xref3.py` | 无 section-header 的 musl ARM ELF 里做 **LDR-literal 字面量池交叉引用**（linear-sweep + 编码级 pattern-match） |
 | `pltx.py` / `plt.py` | 解 musl ARM **PLT stub**（`add ip,pc,rot / add ip,ip,rot / ldr pc,[ip,#-imm]!` 三元组），用 JMPREL/dynsym 还原出 `system`/`popen` 等 import 及其 stub VA |
 | `bl2stub.py` / `blstr.py` | 找 **bl → system/popen stub** 的调用点，回溯参数寄存器的字符串加载，标注 `%s` + shell 语法的模板 |
@@ -189,12 +189,12 @@ JADX 反编译 `MicoLauncher.apk`（56MB，6 dex）后，结论：
 1. **[硬件] 拆机找 UART** —— 小爱音箱板上一般留有串口。`etc/inittab: /bin/login` 在 LX01 是底线；
    LX04 是 Android build（`boot.img` cmdline `buildvariant=user`）——能有 root console 就能 `echo 1 > /data/ssh_en` 直接固化 dropbear。
 2. **[静态] 追 `alarmd`** 的 sqlite→awk 写文件链（`usr/bin/alarm_translate.sh:13-43`，`ID` 列做文件名，
-   理论目录穿越写）。LX01 侧可行，`alarm` path 在云端被 900 deris —— 但设备端方法表（alarm_create 12 个参数
+   理论目录穿越写）。LX01 侧可行，`alarm` path 云端转发但设备端无对象（code 900）——但设备端方法表（alarm_create 12 个参数
    含 `display_txt`/`event`）顺着折腾或许有别的容器。
 3. **[静态] 追 `mico_aivs_lab` 的 `CustomDirective` / `execute device skill directive: %s`+`count_down_start`**
    （`ns/ui_controller_ns.cc`、`ns/system_ns.cc`、`base/aivs_engine.cc` 一整族）——云端 skill payload 可能
    有未过滤 shell 面（LX01 独有栈）。
-4. **[静态] 追 `messagingagent`** 的 push→ubus касcade（`/internal/ubus`、`create_ma_ubus_server`）——
+4. **[静态] 追 `messagingagent`** 的 push→ubus 级联（`/internal/ubus`、`create_ma_ubus_server`）——
    弄清"自家小米账号能不能给音箱发通知/指令"，就是 1.3 RCE 的 cloud-author 认证路。
 5. **[Android] MicoVoip.apk (70MB) / MeshGateway / mqtt.service.application 拆包**——三者均有发生网络面
    可能与未来固件更新/云下发有关。
@@ -221,7 +221,7 @@ work-fw/lx04/                    LX04 Android 固件解剖
   ├─ sysroot/system/...                       debugfs rdump /system 整树
   ├─ mica/{classes*.dex,lib/armeabi-v7a/*.so} MicoLauncher.apk 解包
   ├─ mica_jadx/sources/com/xiaomi/micolauncher/...    jadx decompiled
-  ├─ libmibrainsdk.so             单独 dump 的 brsick lib
+  ├─ libmibrainsdk.so             单独 dump 的库副本
   └─ jadx-*/                      jadx 1.4.7 runnable (需要 JDK17)
 work-fw/spec/                    miot-spec LX04 v1/v2 JSON + 米家 RN 插件包
 thirdparty/lx04_fw/              LX04 payload_2.40.11 原始 bin + README + 下载来源
@@ -229,13 +229,13 @@ thirdparty/lx04_fw/              LX04 payload_2.40.11 原始 bin + README + 下�
 
 ## 六、与官方（小米）文档的对照（供接线索的人交叉验证）
 
-无公开 Mina/ubus 文档；唯一"文档"是四方生态：
-- 有**mini-生态逆向**：`Yonsm/MiService`（原始），`yihong0618/MiService`（活跃 fork，供 xiaogpt 使用）、
-  `hanxi/xiaomusic`、`al-one/hass-xiaomi-miot`（用作 HA 的 native 集成）。
-- 有**固件 dump**：`birdsofsummer/xiaoai-crack`（ubus list mediaplayer 实机输出；
+无公开 Mina/ubus 文档；唯一"文档"是三方生态逆向：
+- **代码逆向**：`Yonsm/MiService`（原始），`yihong0618/MiService`（活跃 fork，供 xiaogpt 使用）、
+  `hanxi/xiaomusic`、`al-one/hass-xiaomi-miot`（HA 集成）。
+- **固件 dump/逆向**：`birdsofsummer/xiaoai-crack`（ubus list mediaplayer 实机输出；
   player_play_music 签名 {music,startOffset,loadMoreOffset,media,src,id,duration}），
   `xuanxuanblingbling` 2022-09-16 补天杯复盘（wakeup.sh→player_play_url 实机命令）。
-- 本仓库固件静态 + equip 对照三方生态，字段完全映射。
+- 本仓库的固件静态分析与上述生态的字段完全互相印证。
 
 ---
 
