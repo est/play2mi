@@ -52,11 +52,11 @@ assert.match(calls[1].url, /remote\/ubus/);
 const ubusBodyB = new URLSearchParams(calls[1].opts.body);
 assert.equal(ubusBodyB.get("method"), "player_play_music");
 
-// did-A（LX06，不在列）：换设备要再拉一次 device_list；随后 player_play_url
+// did-A（LX06，不在列）：整张设备表已缓存，直接 player_play_url
 calls = [];
 await mina.playUrl("did-A", "http://example.com/y.mp3");
-assert.equal(calls.length, 2);
-assert.equal(new URLSearchParams(calls[1].opts.body).get("method"), "player_play_url");
+assert.equal(calls.length, 1);
+assert.equal(new URLSearchParams(calls[0].opts.body).get("method"), "player_play_url");
 
 // fallback 行为：play_url 返回非 0 data.code → 应再发 player_play_music
 // （did-A 的 hardware 上一步已缓存，故不会再拉 device_list）

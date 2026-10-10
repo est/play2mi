@@ -143,7 +143,7 @@
           el("div", { className: "p2x-row" },
             el("label", { text: "设备" }),
             el("select", { className: "p2x-select", data: { device: "" },
-              on: { change: (e) => { state.selected = e.target.value; localStorage.setItem(KEY_DEVICE, state.selected); refreshStatus(); } } }),
+              on: { change: (e) => { state.selected = e.target.value; state.pauseSupported = undefined; localStorage.setItem(KEY_DEVICE, state.selected); refreshStatus(); } } }),
             el("button", { className: "p2x-btn", title: "刷新设备列表", data: { act: "devs" } }, "⟳")),
           el("div", { className: "p2x-status", data: { playing: "" } }),
           el("div", null,
@@ -295,6 +295,7 @@
     state.selected = [...sel.options].some((o) => o.value === remembered)
       ? remembered : sel.options[0]?.value || "";
     sel.value = state.selected;
+    state.pauseSupported = undefined; // 设备表刷新可能改变选中设备，重测暂停能力
   }
 
   function friendlyStatus(resp) {
@@ -315,7 +316,6 @@
       node.textContent = `当前：${text}`;
       node.classList.toggle("p2x-playing", /播放中/.test(text));
       showRaw(resp);
-      state.pauseSupported = undefined; // 状态变化后重测暂停能力
     } catch (e) {
       node.textContent = "状态获取失败（可能票据过期，可重新登录）";
       node.classList.remove("p2x-playing");

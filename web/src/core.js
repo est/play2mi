@@ -99,17 +99,20 @@
   Play2xiaomi._fetchImpl = (url, options) => fetch(url, options);
 
   async function request(url, { timeout = 25000, method = "GET", body = null, signal } = {}) {
+    let text;
     let resp;
     try {
+      const timeoutSignal = AbortSignal.timeout(timeout);
       resp = await Play2xiaomi._fetchImpl(url, {
         method,
         body: body || undefined,
-        signal: signal || AbortSignal.timeout(timeout),
+        // 调用方的取消 signal 与超时取并集：任一触发即中止
+        signal: signal ? AbortSignal.any([signal, timeoutSignal]) : timeoutSignal,
         headers: body ? { "Content-Type": "application/x-www-form-urlencoded" } : undefined,
       });
-      var text = await resp.text();          // eslint-disable-line no-var
+      text = await resp.text();
     } catch (e) {
-      if (e?.name === "AbortError") throw e; // 让上层区分"被取消"
+      if (e?.name === "AbortError") throw e; // 让上层区分"被取消"（超时则是 TimeoutError，按网络错误处理）
       throw new ApiError(`网络请求失败 ${url} (${e?.name || e})`, "network");
     }
     if (!resp.ok) {
@@ -220,7 +223,7 @@
   /* ---------------------------------------- L2 小爱云 Mina（mina 域执行） */
 
   class Mina {
-    constructor() { this._hw = {}; }
+    constructor() { this._hwMap = null; }
 
     async _get(uri, params = {}) {
       const qs = new URLSearchParams({ ...params, requestId: "app_ios_" + rand(30) });
@@ -267,14 +270,15 @@
         { media: "app_ios" });
     }
 
+    /** 设备型号表：一次 device_list 缓存整张 deviceID → hardware，供播放 API 选路 */
     async _hardware(did) {
-      if (did !== this._hw.did) {
-        this._hw = { did, map: {} };
+      if (!this._hwMap) {
+        this._hwMap = {};
         for (const d of await this.deviceList()) {
-          if (d.deviceID) this._hw.map[d.deviceID] = d.hardware || "";
+          if (d.deviceID) this._hwMap[d.deviceID] = d.hardware || "";
         }
       }
-      return this._hw.map[did] || "";
+      return this._hwMap[did] || "";
     }
 
     async playUrl(did, url, type = 2) {
@@ -285,6 +289,8 @@
         { url, type, media: "app_ios" });
       const dcode = r?.data?.code;
       if (dcode !== undefined && dcode !== null && dcode !== 0) {
+        // 仅对"型号不支持 play_url"这类可用性错误有意义；鉴权/参数类错误也会走到这里，
+        // 与 python 版行为保持一致，不额外区分。
         return this.playMusicUrl(did, url, type); // fallback（对照 python 版）
       }
       return r;
