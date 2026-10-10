@@ -1,0 +1,15 @@
+<!doctype html>
+<html lang="zh">
+<head><meta charset="utf-8"/><title>p2x UI 预览</title>
+<style>body{font-family:sans-serif;padding:30px;background:#f2ede4;color:#333}</style></head>
+<body>
+<h3>p2x 面板注入预览（开发用）</h3>
+<p>下面强制走 mina 分支渲染控制台面板；设备列表请求会因非同源失败，
+面板应显示「扫码登录」视图。</p>
+<script>window.__P2X_FORCE__ = "mina";</script>
+<script type="module">
+  import(new URL("../dist/p2x.js", location.href) + "?t=" + Date.now())
+    .catch((e) => console.warn("[preview] import 失败", e));
+</script>
+</body>
+</html>
