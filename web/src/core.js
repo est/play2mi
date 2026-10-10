@@ -227,9 +227,27 @@
     if (lp.code !== 0) {
       throw new ApiError(`扫码登录失败 code=${lp.code} ${lp.description || ""}`, "api", lp.code);
     }
-    await request(lp.location, { timeout: 30000 }); // 回调落 cookie（passToken 等，HttpOnly）
-    log("qrLogin: 扫码成功，回调已落 Cookie");
-    return { mode: "scanned", userId: String(lp.userId) };
+    // —— lp 的字段就是登录本体（对照 cli/mi_auth.py 的 qr_login）——
+    // px: lp 里直接带走 userId/passToken/ssecurity；把 account 域需要的辅助票自己补上，
+    // 不要重依赖后面那一次跨域回调（sts.api.mijia.tech，浏览器 fetch 读不到，会 ERR_FAILED）。
+    log("qrLogin: 扫码结果字段 =", Object.keys(lp).filter(k => /token|userId|ssecurity|nonce|Device|device/i.test(k)).join(","));
+    if (lp.userId) setCookie("userId", String(lp.userId), 3650);          // 换票链要用的辅助票
+    if (lp.passToken) warn("passToken 由服务器以 HttpOnly 下发，浏览器侧只能依赖回调链种植（无法 document.cookie 直写）");
+    // 回调（sts.api.mijia.tech/mijia/sts）浏览器里 fetch 会被 CORS 拦（net::ERR_FAILED）；
+    // 它只负责给 .mijia.tech / .mi.com 落 Cookie，对换成 micoapi 不是必须的。
+    // 用 <img> 触发一次硬翻——服务器照常处理跳转链并落 Cookie，而 image 不受 CORS 限制。
+    if (typeof Image === "function") {
+      await new Promise((res) => {
+        const img = new Image();
+        img.onload = img.onerror = () => res();
+        img.src = lp.location;
+        setTimeout(res, 15000); // 极端网络下别挂死
+      });
+      log("qrLogin: 扫码成功，回调已（尽力）触发");
+    } else {
+      warn("qrLogin: 非 DOM 环境（如 smoke 测试），跳过 <img> 回调触发");
+    }
+    return { mode: "scanned", userId: String(lp.userId), ssecurity: lp.ssecurity ?? "" };
   }
 
   /**
