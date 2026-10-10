@@ -21,6 +21,10 @@
   "use strict";
   const Play2xiaomi = (globalThis.Play2xiaomi = globalThis.Play2xiaomi || {});
 
+  // 调试日志：默认开启；执行 globalThis.Play2xiaomi.DEBUG = false 可整体静音
+  const log = (...a) => { if (Play2xiaomi.DEBUG !== false) console.info("[play2xiaomi]", ...a); };
+  const warn = (...a) => { if (Play2xiaomi.DEBUG !== false) console.warn("[play2xiaomi]", ...a); };
+
   /* ------------------------------------------------------------------ 常量 */
 
   const ACCOUNT_ORIGIN = "https://account.xiaomi.com";
@@ -101,6 +105,8 @@
   async function request(url, { timeout = 25000, method = "GET", body = null, signal } = {}) {
     let text;
     let resp;
+    const tag = `${method} ${url.split("?")[0]}`; // 只记路径，不带 query（可能含票据）
+    log("→", tag);
     try {
       const timeoutSignal = AbortSignal.timeout(timeout);
       resp = await Play2xiaomi._fetchImpl(url, {
@@ -111,8 +117,10 @@
         headers: body ? { "Content-Type": "application/x-www-form-urlencoded" } : undefined,
       });
       text = await resp.text();
+      log("←", tag, resp.status, text.length + "B");
     } catch (e) {
-      if (e?.name === "AbortError") throw e; // 让上层区分"被取消"（超时则是 TimeoutError，按网络错误处理）
+      if (e?.name === "AbortError") { log("✗", tag, "已取消"); throw e; } // 让上层区分"被取消"（超时则是 TimeoutError，按网络错误处理）
+      warn("✗", tag, "网络失败：", e?.name || e);
       throw new ApiError(`网络请求失败 ${url} (${e?.name || e})`, "network");
     }
     if (!resp.ok) {
@@ -164,23 +172,31 @@
    */
   async function qrLogin({ onQr, onPhase, signal } = {}) {
     ensureDeviceId();
+    log("qrLogin: 开始（sid=mijia，检查是否已有有效凭证）");
     const r = await serviceLogin("mijia");
-    if (r.code === 0) return { mode: "already", userId: getCookie("userId") };
+    if (r.code === 0) {
+      log("qrLogin: 浏览器已有有效凭证，免扫码");
+      return { mode: "already", userId: getCookie("userId") };
+    }
     if (!r.location) {
       throw new ApiError(`serviceLogin 未给出 location：${JSON.stringify(r).slice(0, 200)}`, "api", r.code);
     }
+    log("qrLogin: 未登录，拉取扫码参数");
     const stage = await buildQrStage(r);
+    log("qrLogin: 扫码参数就绪（官方二维码图：" + (stage.qr ? "有" : "无") + "）");
     onQr?.(stage);
     let lp = null;
     for (let attempt = 1; attempt <= 5; attempt++) {
       if (signal?.aborted) throw new DOMException("cancelled", "AbortError");
       onPhase?.(`等待【米家 APP】扫码…（第 ${attempt}/5 次连接）`);
+      log("qrLogin: 第", attempt, "/5 次等待扫码（长轮询）");
       try {
         lp = stripXiaomi(await request(stage.lp, { timeout: 150000, signal }));
         break; // 服务器返回即代表本轮长轮询结束
       } catch (e) {
         if (e?.name === "AbortError") throw e;
         if (e?.kind === "http" || e?.kind === "parse") throw e; // 接口层面问题，重挂无意义
+        warn("qrLogin: 第", attempt, "次等待中断（", e?.kind || e?.name, "），准备重挂");
         if (attempt === 5) throw new ApiError("等待扫码超时（连接多次中断），请重新发起登录", "network");
       }
     }
@@ -189,6 +205,7 @@
       throw new ApiError(`扫码登录失败 code=${lp.code} ${lp.description || ""}`, "api", lp.code);
     }
     await request(lp.location, { timeout: 30000 }); // 回调落 cookie（passToken 等，HttpOnly）
+    log("qrLogin: 扫码成功，回调已落 Cookie");
     return { mode: "scanned", userId: String(lp.userId) };
   }
 
@@ -199,6 +216,7 @@
   async function exchangeMicoapi() {
     ensureDeviceId();
     setCookie("sdkVersion", "3.9", 365);
+    log("exchangeMicoapi: 开始换取 sid=micoapi 票");
     const r = await serviceLogin("micoapi");
     if (r.code !== 0 || !r.location) {
       throw new ApiError(`micoapi 换票失败 code=${r.code} ${r.description || ""}`, "api", r.code);
@@ -206,6 +224,7 @@
     const nsec = `nonce=${r.nonce}&${r.ssecurity}`;
     const sign = await sha1B64(nsec);
     await request(r.location + "&clientSign=" + encodeURIComponent(sign), { timeout: 30000 });
+    log("exchangeMicoapi: 完成（.mina.mi.com 票据就绪）");
     return { ok: true };
   }
 
@@ -214,9 +233,11 @@
    * 完成（无论哪种 mode）后 .mina.mi.com 的票就绪。
    */
   async function loginMina({ onQr, onPhase, signal } = {}) {
+    log("loginMina: 开始");
     const result = await qrLogin({ onQr, onPhase, signal });
     if (result.userId) setCookie("userId", result.userId, 3650); // 换票链所需的辅助票
     await exchangeMicoapi();
+    log("loginMina: 完成 mode=", result.mode);
     return result;
   }
 
@@ -239,13 +260,16 @@
     async deviceList(master = 0) {
       const r = await this._get("/admin/v2/device_list", { master });
       if (r.code !== 0) {
+        warn("deviceList: 失败 code=", r.code, r.description || r.message || "");
         throw new ApiError(`device_list code=${r.code} ${r.description || r.message || ""}`, "api", r.code);
       }
+      log("deviceList: OK，设备数 =", (r.data || []).length);
       return r.data || [];
     }
 
     /** ubus 远程调用：所有音箱控制的底座 */
     async ubus(did, method, path, msg) {
+      log("ubus:", method, "path=" + path, "device=" + did);
       return this._post("/remote/ubus", {
         deviceId: did, method, path, message: JSON.stringify(msg),
       });
@@ -273,6 +297,7 @@
     /** 设备型号表：一次 device_list 缓存整张 deviceID → hardware，供播放 API 选路 */
     async _hardware(did) {
       if (!this._hwMap) {
+        log("_hardware: 首次播放，拉取设备表建立型号缓存");
         this._hwMap = {};
         for (const d of await this.deviceList()) {
           if (d.deviceID) this._hwMap[d.deviceID] = d.hardware || "";
@@ -282,7 +307,9 @@
     }
 
     async playUrl(did, url, type = 2) {
-      if (USE_PLAY_MUSIC_API.has(await this._hardware(did))) {
+      const hw = await this._hardware(did);
+      if (USE_PLAY_MUSIC_API.has(hw)) {
+        log("playUrl: 型号", hw || "?", "命中 USE_PLAY_MUSIC_API → player_play_music");
         return this.playMusicUrl(did, url, type);
       }
       const r = await this.ubus(did, "player_play_url", "mediaplayer",
@@ -291,8 +318,10 @@
       if (dcode !== undefined && dcode !== null && dcode !== 0) {
         // 仅对"型号不支持 play_url"这类可用性错误有意义；鉴权/参数类错误也会走到这里，
         // 与 python 版行为保持一致，不额外区分。
+        log("playUrl: player_play_url data.code =", dcode, "→ fallback player_play_music");
         return this.playMusicUrl(did, url, type); // fallback（对照 python 版）
       }
+      log("playUrl: player_play_url 下发成功");
       return r;
     }
 
@@ -340,5 +369,7 @@
     Mina, loginMina, qrLogin, exchangeMicoapi, ensureDeviceId,
     // 工具
     ApiError, rand, getCookie, setCookie, stripXiaomi, sleep,
+    // 调试
+    log, warn,
   });
 })();

@@ -1,0 +1,150 @@
+<!doctype html>
+<html lang="zh">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>播放到小爱 · 书签小程序（bookmarklet）</title>
+<style>
+  *{box-sizing:border-box}
+  body{margin:0;background:#fff;color:#1f2329;
+       font:15px/1.75 -apple-system,"PingFang SC","Segoe UI",sans-serif;}
+  .wrap{max-width:720px;margin:0 auto;padding:48px 20px 96px}
+  h1{font-size:30px;margin:.1em 0 .3em}
+  h2{font-size:21px;margin:2em 0 .5em;padding-bottom:8px;border-bottom:1px solid #eceff3}
+  p{margin:.6em 0}
+  a{color:#2563eb}
+  code{background:#f2f4f7;border:1px solid #e7eaee;border-radius:6px;padding:1px 6px;
+       font-size:13px;word-break:break-all;font-family:ui-monospace,SFMono-Regular,Menlo,monospace}
+  pre{background:#f7f8fa;border:1px solid #e7eaee;border-radius:10px;padding:12px 14px;
+      overflow:auto;font-size:12.5px;font-family:ui-monospace,SFMono-Regular,Menlo,monospace}
+  .lead{font-size:16px;color:#3b424d}
+  .card{background:#fafbfc;border:1px solid #e7eaee;border-radius:14px;padding:4px 20px;margin:16px 0}
+  .bm{display:inline-block;background:linear-gradient(135deg,#ff6900,#ff9447);color:#fff;
+      text-decoration:none;font-weight:700;padding:12px 24px;border-radius:34px;font-size:16px;
+      box-shadow:0 6px 20px rgba(255,105,0,.28);cursor:grab;user-select:none}
+  .bm:active{cursor:grabbing}
+  .step{display:flex;gap:14px;margin:16px 0;align-items:flex-start}
+  .step .n{flex:none;width:28px;height:28px;border-radius:50%;background:#ff6900;color:#fff;
+           text-align:center;line-height:28px;font-weight:700;font-size:14px}
+  .muted{color:#7a828e;font-size:13px}
+  .warn{color:#b45309}
+  details{border:1px solid #e7eaee;border-radius:12px;padding:2px 18px;margin:14px 0;background:#fff}
+  details[open]{background:#fafbfc}
+  summary{cursor:pointer;font-weight:600;font-size:15.5px;padding:12px 0;list-style:none}
+  summary::-webkit-details-marker{display:none}
+  summary::before{content:"▸";display:inline-block;width:1.1em;color:#98a2b3}
+  details[open] summary::before{content:"▾"}
+  details .body{padding:0 0 14px 1.1em}
+  table{border-collapse:collapse;width:100%;margin:.4em 0}
+  td,th{border:1px solid #e7eaee;padding:7px 10px;text-align:left;font-size:13.5px}
+  th{background:#f7f8fa}
+  ol,ul{padding-left:1.4em}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>🔊 播放到小爱</h1>
+  <p class="lead">把一条 <code>http(s)://</code> 音频流投放到小爱音箱上播放，并支持 TTS、音量、
+     暂停 / 停止。<b>无服务器、无需安装</b>：一个小书签（bookmarklet），浏览器直连小米云。</p>
+
+  <h2>安装（三步）</h2>
+  <div class="step"><div class="n">1</div><div>
+    <b>显示书签栏</b>：按 <code>Ctrl/Cmd + Shift + B</code>（Chrome / Edge / Firefox 均可）。
+    移动端浏览器不支持书签功能。</div></div>
+  <div class="step"><div class="n">2</div><div>
+    <b>把下面这颗按钮拖到书签栏</b><br/>
+    <a class="bm" id="bm" href="#">🔊 播放到小爱</a>
+    <div class="muted" style="margin-top:8px">它是一个 <code>javascript:</code> 开头的地址：
+      <br/><code id="bm-code">（正在生成…）</code>
+    </div>
+  </div></div>
+  <div class="step"><div class="n">3</div><div>
+    <b>在任意网页点击它</b>：会先弹一个确认框，确认后自动打开控制台标签页；
+    请在<b>刚打开的那个窗口里再点一次书签</b>，控制面板就出现了。
+    首次会让你扫码登录小米账号。</div></div>
+
+  <h2>说明</h2>
+
+  <details open>
+    <summary>为什么要点两次？</summary>
+    <div class="body">
+      <p>浏览器的跨域（CORS）规则会让别的网站无法调用小米云接口。这个书签的思路是：
+        <b>让界面运行在小米自己的域名上</b>，这样调用就是“同源”，没有任何障碍。</p>
+      <ol>
+        <li>在任意页面点书签 → 弹确认框 → 确认后打开 <code>api2.mina.mi.com</code>（小爱云域名）；</li>
+        <li>在那个窗口<b>再点一次书签</b> → 注入控制面板（所以第一次必须点两次）。</li>
+      </ol>
+      <p class="muted">此后不加 <code>?t=</code> 的 <code>import()</code> 会被浏览器缓存、不再重复执行，
+        所以书签内置了时间戳来强制每次重新执行。</p>
+    </div>
+  </details>
+
+  <details>
+    <summary>登录流程</summary>
+    <div class="body">
+      <p>没登录时面板会引导你：弹窗打开 <code>account.xiaomi.com</code> →
+        在弹窗内<b>再点一次书签</b> → 用【米家 APP】扫描二维码（免密码、免短信）→
+        登录页把凭证写进小米域 Cookie → 弹窗自动通知控制台。</p>
+      <p class="muted">首次 = 3 次书签点击 + 一次扫码；日常 = 在控制台页点一下即可，
+        凭证由浏览器自己保存，有效期内不用重复登录。</p>
+    </div>
+  </details>
+
+  <details>
+    <summary>功能速览</summary>
+    <div class="body">
+      <table>
+        <tr><th>功能</th><th>说明</th></tr>
+        <tr><td>设备选择</td><td>列出主账号下的小爱音箱，可刷新、记住上次选择</td></tr>
+        <tr><td>播放 URL</td><td>输入 <code>http(s)://</code> 音频地址直接投放
+            （mp3 / flac / aac 等由音箱固件支持，常用于自建电台 / 局域网 NAS）</td></tr>
+        <tr><td>TTS 播报</td><td>先停流并等 2 秒再发声（云端异步代发），适合“提醒”类用法</td></tr>
+        <tr><td>媒体控制</td><td>音量 0–100、停止、暂停 / 继续（部分型号不支持暂停，运行时探测）、
+            状态回读；面板打开会显示音箱正在播什么，绝不自动打断</td></tr>
+      </table>
+    </div>
+  </details>
+
+  <details>
+    <summary>隐私与安全</summary>
+    <div class="body">
+      <ul>
+        <li><b>无服务器</b>：本页只做说明书；登录与控制全部在你的浏览器与小米云之间直连完成。</li>
+        <li><b>凭证存在哪？</b> 浏览器自己的 Cookie（<code>serviceToken</code> 由小米登录链路写入
+            <code>.mina.mi.com</code>，<code>passToken</code> 是 <code>HttpOnly</code>，脚本也读不到）。
+            没有第三方备份与传输。</li>
+        <li><b>退出登录</b>：去 <a href="https://account.xiaomi.com/">account.xiaomi.com</a> 退出即可。</li>
+      </ul>
+    </div>
+  </details>
+
+  <details>
+    <summary>常见问题</summary>
+    <div class="body">
+      <ul>
+        <li><b>控制台页显示 403 Forbidden？</b> 正常。<code>api2.mina.mi.com</code> 没有网页首页，
+            书签借它的“域名”做同源执行环境，服务器返回的 403 页也是合法网页，书签照常运行。</li>
+        <li><b>点书签没反应？</b> 确认拖到<b>书签栏</b>而不是收藏夹二级目录；地址栏直接粘贴
+            <code>javascript:</code> 会被浏览器裁掉，必须通过书签点击。</li>
+        <li><b>能播放 <code>http://</code> 非加密地址吗？</b> 可以——浏览器只是把地址字符串传给小米云，
+            由音箱去拉流，与页面协议无关。</li>
+        <li><b>关闭面板 / 标签页会停歌吗？</b> 不会，面板从不主动停止播放。</li>
+      </ul>
+    </div>
+  </details>
+
+  <p class="muted" style="margin-top:2.5em">托管地址：<code id="host-url">（正在生成…）</code></p>
+</div>
+
+<script>
+  // 本页不参与打包：运行时按自身地址推导出 p2x.js 与 bookmarklet，直接可用。
+  (function () {
+    var js = new URL("p2x.js", location.href).href;
+    var bm = "javascript:import('" + js + "?t=' + Date.now())";
+    document.getElementById("bm").setAttribute("href", bm);
+    document.getElementById("bm-code").textContent = bm;
+    document.getElementById("host-url").textContent = js;
+  })();
+</script>
+</body>
+</html>

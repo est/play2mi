@@ -17,6 +17,17 @@
   const C = globalThis.Play2xiaomi;
   if (!C) throw new Error("Play2xiaomi 未初始化（core.js 未先行加载）");
 
+  // 与 core.js 同一套日志开关（globalThis.Play2xiaomi.DEBUG = false 可整体静音）
+  const log = C.log;
+  const warn = C.warn;
+  // 兜住未捕获错误/未处理 Promise，避免"点了没反应"时静默
+  if (!window.__p2xErrHooked) {
+    window.__p2xErrHooked = true;
+    window.addEventListener("error", (e) =>
+      warn("window.onerror:", e.message, (e.filename || "") + ":" + (e.lineno || 0)));
+    window.addEventListener("unhandledrejection", (e) => warn("unhandledrejection:", e.reason));
+  }
+
   const KEY_DEVICE = "p2x:lastDevice";
   // player_get_play_status 的 status 数值 → 文案（未知值则原样显示）
   const STATUS_TEXT = { 1: "▶ 播放中", 0: "■ 已停止", [-1]: "- 空闲" };
@@ -35,9 +46,10 @@
 
   let busy = false; // 防止播放/播报按钮连点
 
+  // attrs 允许传 null（如 el("div", null, child)）：默认值只兜 undefined，不兜 null，这里统一归一化
   const el = (tag, attrs = {}, ...children) => {
     const node = document.createElement(tag);
-    for (const [k, v] of Object.entries(attrs)) {
+    for (const [k, v] of Object.entries(attrs || {})) {
       if (v === undefined || v === null) continue;
       if (k === "text") node.textContent = v;
       else if (k === "className" || k === "class") node.className = v;
@@ -103,12 +115,18 @@
     }, "🔊");
     const root = el("div", { id: "p2x-root" });
     document.body.append(fab, root);
+    log("injectShell: 已注入样式 / 悬浮球 / 面板根（body 存在=" + !!document.body + "）");
     return root;
   }
 
   function togglePanel() {
     const root = document.getElementById("p2x-root");
-    if (root) root.style.display = root.style.display === "none" ? "flex" : "none";
+    if (root) {
+      root.style.display = root.style.display === "none" ? "flex" : "none";
+      log("togglePanel: display =", root.style.display || "(默认 flex)");
+    } else {
+      warn("togglePanel: 找不到 #p2x-root");
+    }
   }
 
   function toast(text, ms = 5200) {
@@ -120,6 +138,7 @@
   /* ------------------------------------------------------------- 控制台面板 */
 
   function buildPanel(root) {
+    log("buildPanel: 构建面板");
     state.panel = root;
     root.append(
       el("div", { className: "p2x-head" },
@@ -188,6 +207,7 @@
 
     state.views = {};
     for (const v of root.querySelectorAll(".p2x-view")) state.views[v.dataset.viewName] = v;
+    log("buildPanel: 完成，视图 =", Object.keys(state.views).join("/"));
   }
 
   const q = {
@@ -228,36 +248,51 @@
   /* ------------------------------------------------------------- 入口分派 */
 
   function init() {
-    if (document.getElementById("p2x-root")) { togglePanel(); return; }
-    // 开发预览钩子：dev/preview.html 里可强制走某分支（window.__P2X_FORCE__='mina'|'account'）
-    const forced = window.__P2X_FORCE__;
-    if ((forced === "mina" && location.host !== C.MINA_HOST) ||
-        (forced === "account" && location.origin !== C.ACCOUNT_ORIGIN)) {
-      const root = injectShell();
-      forced === "mina" ? setupMina(root) : setupAccount();
-      console.info("[play2xiaomi] dev preview 强制分支：" + forced);
-      return;
-    }
-    if (location.origin === C.ACCOUNT_ORIGIN) {
-      injectShell();
-      setupAccount();
-    } else if (location.host === C.MINA_HOST) {
-      setupMina(injectShell());
-    } else {
-      // 任意页面：打开（或聚焦）控制台页。同名窗口复用 → 重复点击只会聚焦
-      window.open(C.MINA_LANDING, "p2x_console");
-      toast("已打开「播放到小爱」控制台标签页，请在那个页面上再点一次书签 🔊");
+    log("init: 触发（href=" + location.href + "，readyState=" + document.readyState + "）");
+    try {
+      if (document.getElementById("p2x-root")) { log("init: 已注入过，改为开合面板"); togglePanel(); return; }
+      // 开发预览钩子：dev/preview.html 里可强制走某分支（window.__P2X_FORCE__='mina'|'account'）
+      const forced = window.__P2X_FORCE__;
+      if ((forced === "mina" && location.host !== C.MINA_HOST) ||
+          (forced === "account" && location.origin !== C.ACCOUNT_ORIGIN)) {
+        log("init: dev preview 强制分支 =", forced);
+        const root = injectShell();
+        forced === "mina" ? setupMina(root) : setupAccount();
+        return;
+      }
+      if (location.origin === C.ACCOUNT_ORIGIN) {
+        log("init: 命中 account 域分支");
+        injectShell();
+        setupAccount();
+      } else if (location.host === C.MINA_HOST) {
+        log("init: 命中 mina 域分支");
+        setupMina(injectShell());
+      } else {
+        // 任意页面：先确认，再打开（或聚焦）控制台页。同名窗口复用 → 重复点击只会聚焦
+        log("init: 普通页面分支，弹确认框并打开控制台页");
+        const ok = window.confirm(
+          "「播放到小爱」需要打开一个小爱云页面作为控制台。\n\n" +
+          "打开后，请在刚出现的新窗口/标签页里【再点一次这个书签】来唤起控制面板。\n\n" +
+          "现在打开控制台页吗？");
+        if (!ok) { log("init: 用户取消"); return; }
+        window.open(C.MINA_LANDING, "p2x_console");
+        toast("已打开「播放到小爱」控制台标签页，请切过去再点一次书签 🔊");
+      }
+    } catch (e) {
+      warn("init: 异常", e);
+      throw e;
     }
   }
 
   /* ------------------------------------------------------------- 控制台页 */
 
   function setupMina(root) {
+    log("setupMina: 开始");
     buildPanel(root);
     // 登录弹窗完成 → 重新探测（不做任何自动停止，原则：不打断在播内容）
     window.addEventListener("message", (e) => {
       if (e.origin === C.ACCOUNT_ORIGIN && e.data?.type === "p2x:login-done") {
-        console.info("[play2xiaomi] 登录完成，重新探测");
+        log("setupMina: 收到登录完成消息，重新探测");
         probe();
       }
     });
@@ -266,15 +301,17 @@
   }
 
   async function probe() {
+    log("probe: 开始拉取设备列表");
     setView("loading");
     $(q.load).textContent = "正在连接小爱云…";
     try {
       state.devices = await state.mina.deviceList();
+      log("probe: 成功，设备数 =", state.devices.length);
       renderDevices();
       setView("main");
       refreshStatus(); // 面板打开即读当前播放状态，不动音箱
     } catch (e) {
-      console.warn("[play2xiaomi] device_list 失败", e);
+      warn("probe: device_list 失败，切到登录视图 →", e?.message || e);
       setView("login");
     }
   }
@@ -285,6 +322,7 @@
     if (!state.devices.length) {
       sel.append(new Option("（无主账号设备）", ""));
       state.selected = "";
+      log("renderDevices: 无设备");
       return;
     }
     const remembered = localStorage.getItem(KEY_DEVICE);
@@ -296,6 +334,7 @@
       ? remembered : sel.options[0]?.value || "";
     sel.value = state.selected;
     state.pauseSupported = undefined; // 设备表刷新可能改变选中设备，重测暂停能力
+    log("renderDevices: 可选项 =", sel.options.length, "，选中 =", state.selected);
   }
 
   function friendlyStatus(resp) {
@@ -310,21 +349,24 @@
   async function refreshStatus() {
     const node = $(q.playing);
     if (!state.selected) { node.textContent = ""; return; }
+    log("refreshStatus: device =", state.selected);
     try {
       const resp = await state.mina.getStatus(state.selected);
       const { text } = friendlyStatus(resp);
       node.textContent = `当前：${text}`;
       node.classList.toggle("p2x-playing", /播放中/.test(text));
       showRaw(resp);
+      log("refreshStatus: OK →", text);
     } catch (e) {
       node.textContent = "状态获取失败（可能票据过期，可重新登录）";
       node.classList.remove("p2x-playing");
       if (e?.kind === "api") setView("login");
-      console.warn("[play2xiaomi] status 失败", e);
+      warn("refreshStatus: 失败 →", e?.message || e);
     }
   }
 
   function onButton(actName) {
+    log("onButton:", actName);
     if (actName === "min") { togglePanel(); return; }
     if (actName === "login" || actName === "relogin") {
       window.open(C.LOGIN_PAGE, "p2x_login", "width=480,height=720");
@@ -346,6 +388,7 @@
     if (busy) { setMsg("上一个操作还在执行…", true); return; }
     const did = state.selected;
     const setBusy = (b) => (busy = b);
+    log("act:", name, "device =", did || "(未选)");
     setBusy(true);
     try {
       switch (name) {
@@ -397,6 +440,7 @@
         default: return;
       }
     } catch (e) {
+      warn("act:", name, "失败 →", e?.message || e, e?.body || "");
       setMsg(`操作失败：${e?.message || e}${e?.body ? " · " + e.body : ""}`, true);
       if (e?.kind === "api") { showRaw(e); setView("login"); }
     } finally {
@@ -407,6 +451,7 @@
   /* --------------------------------------------------------------- 登录页 */
 
   function setupAccount() {
+    log("setupAccount: 开始");
     const root = document.getElementById("p2x-root");
     state.panel = root; // 让 $() 有根
     root.append(
@@ -463,10 +508,12 @@
     state.abortLogin?.abort();
     state.abortLogin = new AbortController();
     const signal = state.abortLogin.signal;
+    log("runLogin: 开始登录流程");
     try {
       const result = await C.loginMina({
         signal,
         onQr: (stage) => {
+          log("runLogin: 收到二维码阶段（官方图：" + (stage.qr ? "有" : "无") + "）");
           qrbox.hidden = false;
           qrbox.innerHTML = "";
           qrbox.append(el("div", { className: "p2x-note", text: "请用【米家 APP】扫码（免密码、免短信）" }));
@@ -484,9 +531,10 @@
           qrurl.hidden = false;
           qrurl.textContent = "扫码内容：" + stage.loginUrl;
         },
-        onPhase: (t) => (phase.textContent = t),
+        onPhase: (t) => { log("runLogin: 阶段 →", t); phase.textContent = t; },
       });
       if (signal.aborted) return;
+      log("runLogin: 成功 mode =", result.mode);
       qrbox.hidden = true; qrurl.hidden = true; btnCancel.hidden = true; btnRetry.hidden = false;
       phase.textContent = result.mode === "already"
         ? "检测到浏览器里已有有效凭证，免扫码直接换票 ✓"
@@ -498,8 +546,8 @@
         window.opener?.postMessage({ type: "p2x:login-done" }, C.MINA_ORIGIN);
       } catch (_) { /* 控制台标签页已关也无妨，用户手动切回 */ }
     } catch (e) {
-      if (signal.aborted || e?.name === "AbortError") return; // 旧尝试被新登录取代/取消
-      console.warn("[play2xiaomi] 登录失败", e);
+      if (signal.aborted || e?.name === "AbortError") { log("runLogin: 已取消/被新尝试取代"); return; }
+      warn("runLogin: 登录失败 →", e?.message || e, e?.body || "");
       phase.textContent = "登录流程未完成";
       err.hidden = false;
       err.textContent = `${e?.message || e}${e?.body ? " · " + e.body : ""}` +
