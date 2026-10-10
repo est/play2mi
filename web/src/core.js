@@ -1,16 +1,19 @@
 /* ============================================================================
  * play2xiaomi · core.js —— 协议层（无 DOM 依赖，可独立测试）
  *
- * 职责（对照 python 版 qr_mina_play.py 的 Mina 部分）：
- *   L1  登录：直接交给小米官方登录页 LOGIN_PAGE（sid=micoapi）。该页面的回调就是
- *       https://api2.mina.mi.com/sts，浏览器会据此把 serviceToken 写到 .mina.mi.com；
- *       本文件不再自己取二维码 / 换票。
+ * 职责（对照 python 版 src/mi_auth.py + qr_mina_play.py 的 Mina 部分）：
+ *   L1  米家 APP 扫码登录（account.xiaomi.com 域内执行，免密免短信）
+ *   换票  passToken → sid=micoapi 的 serviceToken（免密 exchange_sid）
  *   L2  小爱云 Mina 客户端（api2.mina.mi.com，播音 / TTS / 音量 / 状态）
  *
- * 关键结论：
- *   - account.xiaomi.com 不返回 Access-Control-Allow-Origin，所以在 api2.mina.mi.com
- *     页面上跨域读不到它的响应——自定义扫码/换票在书签里做不到，只能借官方登录页完成。
- *   - 浏览器不允许 JS 给 fetch 设 Cookie 头（forbidden header），Mina 请求全靠隐式 Cookie。
+ * 关键结论（已实测验证）：
+ *   - 登录跳转链会把 serviceToken 以 Cookie 落在 .mina.mi.com、userId 落在
+ *     .mi.com，passToken 是 .account.xiaomi.com 的 HttpOnly——所以「换票」
+ *     这一步只需在 account 域走完整个跳转链，浏览器自动把票种好，
+ *     mina 域的请求凭隐式 Cookie 即可，无需任何 token 中继/存储。
+ *   - 浏览器不允许 JS 给 fetch 设 Cookie 头（forbidden header），本文件所有
+ *     请求都依赖隐式 Cookie；document.cookie 只用于 deviceId/sdkVersion/userId
+ *     这几个辅助票。
  *
  * 约定：本文件不得 import 任何 DOM 按钮/面板逻辑；界面在 main.js。
  * ========================================================================== */
@@ -67,6 +70,29 @@
   /** 小米 account 域返回的 JSON 挂着 "&&&START&&&" 前缀，剥掉再 parse */
   function stripXiaomi(text) {
     return JSON.parse(String(text).replace("&&&START&&&", ""));
+  }
+
+  /** 只在目标域自身的页面上执行时才有意义；辅助票用（deviceId/sdkVersion/userId） */
+  function setCookie(name, value, days) {
+    const exp = days
+      ? "; expires=" + new Date(Date.now() + days * 86400e3).toUTCString()
+      : "; expires=Thu, 01 Jan 1970 00:00:00 GMT";
+    document.cookie = name + "=" + encodeURIComponent(value) + "; path=/" + exp;
+  }
+
+  function getCookie(name) {
+    const m = new RegExp(
+      "(?:^|; )" + name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&") + "=([^;]*)"
+    ).exec(document.cookie);
+    return m ? decodeURIComponent(m[1]) : "";
+  }
+
+  /** SHA-1 + base64：exchange sid 的 clientSign 用（SubtleCrypto） */
+  async function sha1B64(text) {
+    const digest = await crypto.subtle.digest("SHA-1", new TextEncoder().encode(text));
+    let bin = "";
+    new Uint8Array(digest).forEach((b) => (bin += String.fromCharCode(b)));
+    return btoa(bin);
   }
 
   const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -130,11 +156,113 @@
     }
   }
 
-  /* ------------------------------------------------- L1 认证（account 域） */
-  // 登录不由本文件实现：直接用小米官方登录页（LOGIN_PAGE），它的回调就是
-  // https://api2.mina.mi.com/sts，官方页面会让浏览器把 serviceToken 写到 .mina.mi.com。
-  // 之所以不自己取码/换票：浏览器 CORS 不允许我们从 api2.mina.mi.com 读 account.xiaomi.com
-  // 的响应（该域不返回 Access-Control-Allow-Origin），自定义流程在书签里根本走不通。
+  /* ------------------------------------------------- L1 认证（account 域执行） */
+
+  function ensureDeviceId() {
+    if (!getCookie("deviceId")) setCookie("deviceId", rand(16).toUpperCase(), 3650);
+  }
+
+  /** serviceLogin通用调用（_json=true 的 GET） */
+  async function serviceLogin(sid) {
+    return requestJson(`${ACCOUNT_ORIGIN}/pass/serviceLogin?sid=${sid}&_json=true`);
+  }
+
+  /**
+   * 生成扫码阶段参数：{ qr, loginUrl, lp }（qr 为官方二维码图片地址，可能为空）。
+   *
+   * 注意：不是直接请求 serviceLogin 给的 location，而是把 location 的 query 当作参数，
+   * 请求固定的 longPolling/loginUrl（对照 cli/mi_auth.py 的 qr_login；直接请求 location
+   * 会得到"Callback连接不合法"）。
+   */
+  async function buildQrStage(notLoggedInResp) {
+    const params = new URL(notLoggedInResp.location, ACCOUNT_ORIGIN).searchParams;
+    params.set("_qrsize", "240");
+    params.set("_dc", String(Date.now()));
+    const login = await requestJson(
+      `${ACCOUNT_ORIGIN}/longPolling/loginUrl?${params}`, { timeout: 30000 });
+    log("buildQrStage: 已取到扫码参数（qr=" + (login.qr ? "有" : "无")
+      + "，loginUrl=" + (login.loginUrl ? "有" : "无") + "，lp=" + (login.lp ? "有" : "无") + "）");
+    return { qr: login.qr || "", loginUrl: login.loginUrl || "", lp: login.lp };
+  }
+
+  /**
+   * 米家 APP 扫码登录。
+   * - 服务端曾登录过（浏览器里有有效 passToken）→ 直接返回 already，
+   *   调用方走免密换票即可，不弹二维码。
+   * - 否则长轮询 lp 等待扫码：服务器挂住连接返回结果；网络打嗝就重挂，
+   *   最多 5 次（约 12 分钟）。onQr({qr,loginUrl}) 供界面渲染二维码。
+   * 返回 { mode: 'already'|'scanned', userId }
+   */
+  async function qrLogin({ onQr, onPhase, signal } = {}) {
+    ensureDeviceId();
+    log("qrLogin: 开始（sid=mijia，检查是否已有有效凭证）");
+    const r = await serviceLogin("mijia");
+    if (r.code === 0) {
+      log("qrLogin: 浏览器已有有效凭证，免扫码");
+      return { mode: "already", userId: getCookie("userId") };
+    }
+    if (!r.location) {
+      throw new ApiError(`serviceLogin 未给出 location：${JSON.stringify(r).slice(0, 200)}`, "api", r.code);
+    }
+    log("qrLogin: 未登录，拉取扫码参数");
+    const stage = await buildQrStage(r);
+    log("qrLogin: 扫码参数就绪（官方二维码图：" + (stage.qr ? "有" : "无") + "）");
+    onQr?.(stage);
+    let lp = null;
+    for (let attempt = 1; attempt <= 5; attempt++) {
+      if (signal?.aborted) throw new DOMException("cancelled", "AbortError");
+      onPhase?.(`等待【米家 APP】扫码…（第 ${attempt}/5 次连接）`);
+      log("qrLogin: 第", attempt, "/5 次等待扫码（长轮询）");
+      try {
+        lp = stripXiaomi(await request(stage.lp, { timeout: 150000, signal }));
+        break; // 服务器返回即代表本轮长轮询结束
+      } catch (e) {
+        if (e?.name === "AbortError") throw e;
+        if (e?.kind === "http" || e?.kind === "parse") throw e; // 接口层面问题，重挂无意义
+        warn("qrLogin: 第", attempt, "次等待中断（", e?.kind || e?.name, "），准备重挂");
+        if (attempt === 5) throw new ApiError("等待扫码超时（连接多次中断），请重新发起登录", "network");
+      }
+    }
+    if (!lp) throw new ApiError("等待扫码被取消", "network");
+    if (lp.code !== 0) {
+      throw new ApiError(`扫码登录失败 code=${lp.code} ${lp.description || ""}`, "api", lp.code);
+    }
+    await request(lp.location, { timeout: 30000 }); // 回调落 cookie（passToken 等，HttpOnly）
+    log("qrLogin: 扫码成功，回调已落 Cookie");
+    return { mode: "scanned", userId: String(lp.userId) };
+  }
+
+  /**
+   * 免密换票：把浏览器里已有的有效凭证换成 sid=micoapi 的 serviceToken。
+   * 票本身由跳转链写进 .mina.mi.com Cookie（浏览器自动携带），这里不取值。
+   */
+  async function exchangeMicoapi() {
+    ensureDeviceId();
+    setCookie("sdkVersion", "3.9", 365);
+    log("exchangeMicoapi: 开始换取 sid=micoapi 票");
+    const r = await serviceLogin("micoapi");
+    if (r.code !== 0 || !r.location) {
+      throw new ApiError(`micoapi 换票失败 code=${r.code} ${r.description || ""}`, "api", r.code);
+    }
+    const nsec = `nonce=${r.nonce}&${r.ssecurity}`;
+    const sign = await sha1B64(nsec);
+    await request(r.location + "&clientSign=" + encodeURIComponent(sign), { timeout: 30000 });
+    log("exchangeMicoapi: 完成（.mina.mi.com 票据就绪）");
+    return { ok: true };
+  }
+
+  /**
+   * 一步到位：扫码（或免扫码复用已有票）→ 换 micoapi 票。
+   * 完成（无论哪种 mode）后 .mina.mi.com 的票就绪。
+   */
+  async function loginMina({ onQr, onPhase, signal } = {}) {
+    log("loginMina: 开始");
+    const result = await qrLogin({ onQr, onPhase, signal });
+    if (result.userId) setCookie("userId", result.userId, 3650); // 换票链所需的辅助票
+    await exchangeMicoapi();
+    log("loginMina: 完成 mode=", result.mode);
+    return result;
+  }
 
   /* ---------------------------------------- L2 小爱云 Mina（mina 域执行） */
 
@@ -260,10 +388,10 @@
     // 协议常量
     ACCOUNT_ORIGIN, ACCOUNT_HOST, MINA_ORIGIN, MINA_HOST, MINA_LANDING,
     LOGIN_PAGE, USE_PLAY_MUSIC_API,
-    // 客户端
-    Mina,
+    // 客户端与流程
+    Mina, loginMina, qrLogin, exchangeMicoapi, ensureDeviceId,
     // 工具
-    ApiError, rand, stripXiaomi, sleep,
+    ApiError, rand, getCookie, setCookie, stripXiaomi, sleep,
     // 调试
     log, warn,
   });

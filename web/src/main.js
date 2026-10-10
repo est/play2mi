@@ -38,7 +38,7 @@
     selected: "",
     panel: null,        // 控制台面板根节点（仅 mina 页有）
     views: {},
-    view: "",           // 当前视图名（用于回到页面时按需刷新）
+    abortLogin: null,   // 登录页长轮询的取消信号
     pauseSupported: undefined, // 运行时探测结果缓存
   };
 
@@ -168,10 +168,10 @@ body.p2x-page{margin:0;background:#fff;color:#1f2329;
           el("div", null,
             el("div", { text: "还没有登录小爱云（或凭证过期）。" }),
             el("div", { style: "height:10px" }),
-            el("a", { className: "p2x-btn primary", href: C.LOGIN_PAGE, target: "_blank", rel: "noopener" }, "🔐 打开小米官方登录页扫码"),
+            el("a", { className: "p2x-btn primary", href: C.LOGIN_PAGE, target: "_blank", rel: "noopener" }, "🔐 去扫码登录"),
             el("div", { style: "height:10px" }),
             el("div", { className: "p2x-note",
-              text: "在打开的官方页面里用【米家 APP】扫码即可（免密码、免短信）。扫完回到本页会自动刷新。" }))),
+              text: "新标签页会打开小米账号登录页；请在那个页面里再点一次书签，即可显示二维码（免密码、免短信）。扫完切回本页会自动刷新。" }))),
         // —— 视图：主面板 ——
         view("main",
           el("div", { className: "p2x-row" },
@@ -246,7 +246,6 @@ body.p2x-page{margin:0;background:#fff;color:#1f2329;
   }
 
   function setView(name) {
-    state.view = name;
     for (const [k, v] of Object.entries(state.views)) v.classList.toggle("on", k === name);
   }
 
@@ -273,19 +272,17 @@ body.p2x-page{margin:0;background:#fff;color:#1f2329;
       // 每次书签都带 ?t= 强制重新执行：直接清空原页面整页重绘，不做小窗叠加
       // 开发预览钩子：dev/preview.html 里可强制走某分支（window.__P2X_FORCE__='mina'|'account'）
       const forced = window.__P2X_FORCE__;
-      if (forced === "mina" && location.host !== C.MINA_HOST) {
-        log("init: dev preview 强制 mina 分支");
-        setupMina(injectShell());
-        return;
-      }
-      if (forced === "account") {
-        log("init: account 分支由小米官方登录页接管，忽略");
+      if ((forced === "mina" && location.host !== C.MINA_HOST) ||
+          (forced === "account" && location.origin !== C.ACCOUNT_ORIGIN)) {
+        log("init: dev preview 强制分支 =", forced);
+        const root = injectShell();
+        forced === "mina" ? setupMina(root) : setupAccount();
         return;
       }
       if (location.origin === C.ACCOUNT_ORIGIN) {
-        // 官方登录页自带二维码，别去动它；控制台里点「打开小米官方登录页扫码」即可
-        log("init: account 域，官方登录页直接扫码，跳过注入");
-        toast("官方登录页里直接扫码即可，无需在此点书签");
+        log("init: 命中 account 域分支");
+        injectShell();
+        setupAccount();
       } else if (location.host === C.MINA_HOST) {
         log("init: 命中 mina 域分支");
         setupMina(injectShell());
@@ -311,10 +308,22 @@ body.p2x-page{margin:0;background:#fff;color:#1f2329;
   function setupMina(root) {
     log("setupMina: 开始");
     buildPanel(root);
-    // 去官方登录页扫码后切回本页时自动重试（不打断在播内容）
+    // 登录弹窗完成 → 重新探测（不做任何自动停止，原则：不打断在播内容）
+    // 每次重绘都会替换旧监听，避免多次点书签后累积、且旧闭包操作已移除的节点
+    if (window.__p2xMsgHandler) window.removeEventListener("message", window.__p2xMsgHandler);
+    window.__p2xMsgHandler = (e) => {
+      if (e.origin === C.ACCOUNT_ORIGIN && e.data?.type === "p2x:login-done") {
+        log("setupMina: 收到登录完成消息，重新探测");
+        probe();
+      }
+    };
+    window.addEventListener("message", window.__p2xMsgHandler);
+    // 登录页用 <a target=_blank rel=noopener> 打开，opener 为 null → postMessage 收不到，
+    // 所以切回本页时再兜一次：若仍在登录视图就重试 device_list。
     if (window.__p2xFocusHandler) window.removeEventListener("focus", window.__p2xFocusHandler);
     window.__p2xFocusHandler = () => {
-      if (state.view === "login") { log("setupMina: 回到页面，重试 device_list"); probe(); }
+      const loginOn = $('.p2x-view[data-view-name="login"]')?.classList.contains("on");
+      if (loginOn) { log("setupMina: 回到页面，重试 device_list"); probe(); }
     };
     window.addEventListener("focus", window.__p2xFocusHandler);
     setView("loading");
@@ -461,6 +470,92 @@ body.p2x-page{margin:0;background:#fff;color:#1f2329;
       if (e?.kind === "api") { showRaw(e); setView("login"); }
     } finally {
       setBusy(false);
+    }
+  }
+
+  /* --------------------------------------------------------------- 登录页 */
+
+  function setupAccount() {
+    log("setupAccount: 开始");
+    const root = document.getElementById("p2x-root");
+    state.panel = root; // 让 $() 有根
+    root.append(
+      el("div", { className: "p2x-head" }, "🔐 小爱云登录"),
+      el("div", { className: "p2x-body" },
+        el("div", { className: "p2x-status", data: { phase: "" } }, "正在检查登录状态…"),
+        el("div", { className: "p2x-status err", data: { err: "" }, hidden: "" }),
+        el("div", { className: "p2x-qr", data: { qrbox: "" }, hidden: "" }),
+        el("div", { className: "p2x-note", data: { qrurl: "" }, hidden: "" }),
+        el("div", { className: "p2x-status", data: { done: "" }, hidden: "" })),
+      el("div", { className: "p2x-logtitle", text: "运行日志" }),
+      el("div", { className: "p2x-log", data: { log: "" } }),
+      el("div", { className: "p2x-foot" },
+        el("span", { text: "登录只发生在你的浏览器里，服务器不经手凭证" })),
+    );
+    logBox = $(q.log);
+    flushLogs();
+    runLogin();
+  }
+
+  async function runLogin() {
+    const root = state.panel;
+    const phase = $('[data-phase=""]', root);
+    const err = $('[data-err=""]', root);
+    const qrbox = $('[data-qrbox=""]', root);
+    const qrurl = $('[data-qrurl=""]', root);
+    const done = $('[data-done=""]', root);
+    err.hidden = true; qrbox.hidden = true; qrurl.hidden = true; done.hidden = true;
+    phase.textContent = "正在与小米账号服务端协商…";
+
+    state.abortLogin?.abort();
+    state.abortLogin = new AbortController();
+    const signal = state.abortLogin.signal;
+    log("runLogin: 开始登录流程");
+    try {
+      const result = await C.loginMina({
+        signal,
+        onQr: (stage) => {
+          log("runLogin: 收到二维码阶段（官方图：" + (stage.qr ? "有" : "无") + "）");
+          qrbox.hidden = false;
+          qrbox.replaceChildren();
+          // 与 python 版一致：优先官方 qr 图片；缺图则用公开服务按 loginUrl 现场渲染
+          const src = stage.qr || (stage.loginUrl
+            ? "https://api.qrserver.com/v1/create-qr-code/?size=240x240&data="
+              + encodeURIComponent(stage.loginUrl)
+            : "");
+          if (src) {
+            qrbox.append(el("img", { src, alt: "登录二维码", width: 240, height: 240 }));
+          } else {
+            qrbox.append(el("div", { className: "p2x-note", text: "未取到二维码地址" }));
+          }
+          if (stage.loginUrl) {
+            qrurl.hidden = false;
+            qrurl.replaceChildren(
+              el("span", { text: "扫码内容（可新窗口打开或复制）：" }),
+              el("a", { href: stage.loginUrl, target: "_blank", rel: "noopener", text: stage.loginUrl }));
+          }
+        },
+        onPhase: (t) => { log("runLogin: 阶段 →", t); phase.textContent = t; },
+      });
+      if (signal.aborted) return;
+      log("runLogin: 成功 mode =", result.mode);
+      qrbox.hidden = true; qrurl.hidden = true;
+      phase.textContent = result.mode === "already"
+        ? "检测到浏览器里已有有效凭证，免扫码直接换票 ✓"
+        : "扫码登录并换票 ✓";
+      done.hidden = false;
+      done.textContent = "小爱云票已就位（浏览器已在 .mina.mi.com 域种好服务 Cookie）。" +
+        "切回控制台标签页，或直接关闭本页。";
+      try {
+        window.opener?.postMessage({ type: "p2x:login-done" }, C.MINA_ORIGIN);
+      } catch (_) { /* 控制台标签页已关也无妨，用户手动切回 */ }
+    } catch (e) {
+      if (signal.aborted || e?.name === "AbortError") { log("runLogin: 已取消/被新尝试取代"); return; }
+      warn("runLogin: 登录失败 →", e?.message || e, e?.body || "");
+      phase.textContent = "登录流程未完成";
+      err.hidden = false;
+      err.textContent = `${e?.message || e}${e?.body ? " · " + e.body : ""}` +
+        "（可重新点一次书签重试）";
     }
   }
 
