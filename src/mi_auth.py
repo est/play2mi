@@ -5,11 +5,6 @@ L3/L4 Miot 客户端。campro（摄像头）与 play2mijia（音响）各存一�
 内容保持一致，改动时请两边同步。票据文件共用同一路径
 （~/.cache/campro/mina_qr_auth.json），扫一次码两边都能用。
 
-NOTE（双仓库副本）：
-  本文件在 campro（poc/mi_auth.py）与 play2mijia（poc/mi_auth.py）
-  各存一份，内容保持一致。改动时请两边同步。票据文件共用同一路径
-  （~/.cache/campro/mina_qr_auth.json），扫一次码两边都能用。
-
 链路：
   1. QR 登录 sid=mijia：serviceLogin → longPolling/loginUrl → 米家 APP
      扫码 → 长轮询 lp，得到 userId / passToken（无密码、无短信）。
