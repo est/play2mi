@@ -36,8 +36,11 @@ from pathlib import Path
 
 UA = ("MiHome/6.0.103 (com.xiaomi.mihome; build:6.0.103.1; "
       "iOS 14.4.0) Alamofire/6.0.103 MICO/iOSApp/appStore/6.0.103")
-TOKEN_PATH = Path.home() / ".cache" / "campro" / "mina_qr_auth.json"
 
+try:
+    TOKEN_PATH = Path(__file__).parent / "mina_qr_auth.json"
+except NameError:
+    TOKEN_PATH = Path.cwd() / "mina_qr_auth.json"
 
 class Client:
     def __init__(self):
