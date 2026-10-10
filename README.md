@@ -1,6 +1,6 @@
-# play to mijia
+# play to xiaomi
 
-stream your $url music on mijia smart speakers
+stream your $url music on xiaomi smart speakers
 
 
 ## reference

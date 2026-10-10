@@ -28,10 +28,13 @@ import os
 import random
 import string
 import sys
+import tempfile
+import threading
 import time
 import urllib.error
 import urllib.parse
 import urllib.request
+import webbrowser
 from pathlib import Path
 
 UA = ("MiHome/6.0.103 (com.xiaomi.mihome; build:6.0.103.1; "
@@ -74,6 +77,98 @@ def _rand(n=16) -> str:
     return "".join(random.sample(string.ascii_letters + string.digits, n))
 
 
+def _build_qr_html(qr_url: str | None, login_url: str | None) -> str:
+    """生成一个本地 HTML 展示二维码，返回 file:// URL（纯标准库，零依赖）。
+
+    优先用官方下发的 qr 图片地址；若缺失则用公开 qrserver 按 loginUrl 现场渲染。
+    """
+    if qr_url:
+        img_src = qr_url
+    elif login_url:
+        img_src = ("https://api.qrserver.com/v1/create-qr-code/?size=260x260&data="
+                   + urllib.parse.quote(login_url, safe=""))
+    else:
+        img_src = ""
+    esc_img = img_src.replace("&", "&amp;").replace('"', "&quot;")
+    esc_login = (login_url or "-").replace("&", "&amp;").replace("<", "&lt;")
+    html = (f"""<!doctype html><html lang="zh"><head><meta charset="utf-8">"""
+            f"""<title>米家扫码登录</title></head><body style="font-family:sans-serif;text-align:center">"""
+            f"""<h2>请用【米家 APP】扫码登录</h2>"""
+            f"""{f'<img src="{esc_img}" width="360" height="360" style="border:1px solid #ccc">' if esc_img else '<p>无二维码地址</p>'}"""
+            f"""<p style="word-break:break-all;color:#555">{esc_login}</p>"""
+            f"""<p>扫完码回到终端继续</p></body></html>""")
+    fd, path = tempfile.mkstemp(prefix="mijia_qr_", suffix=".html")
+    with os.fdopen(fd, "w", encoding="utf-8") as f:
+        f.write(html)
+    return Path(path).as_uri()
+
+
+def _open_qr_in_browser(qr_url: str | None, login_url: str | None) -> None:
+    try:
+        page = _build_qr_html(qr_url, login_url)
+        webbrowser.open(page)
+        print(f"已在浏览器打开二维码：{page}", flush=True)
+    except Exception as e:  # 无图形环境等情况只提示，不中断扫码等待
+        print(f"打开浏览器失败（可手动访问上面的二维码图片地址）：{e}",
+              file=sys.stderr)
+
+
+def _wait_key_and_open(qr_url: str | None, login_url: str | None,
+                       done: threading.Event, timeout: int) -> None:
+    """后台等一个任意键（回车亦可），按了就打开浏览器展示二维码。
+
+    主线程在长轮询扫码；本线程只负责“按了就弹浏览器”，扫码结束（done）
+    或超时后自动退出，不阻塞主流程。非 tty（如 CI/管道）直接返回。
+    """
+    try:
+        if not sys.stdin.isatty():
+            return
+    except Exception:
+        return
+    deadline = time.time() + timeout
+    try:
+        if os.name == "nt":
+            import msvcrt  # noqa: E402
+
+            while time.time() < deadline and not done.is_set():
+                if msvcrt.kbhit():
+                    msvcrt.getwch()
+                    break
+                time.sleep(0.1)
+            else:
+                return
+        else:
+            import select  # noqa: E402
+            import termios  # noqa: E402
+            import tty  # noqa: E402
+
+            fd = sys.stdin.fileno()
+            old = termios.tcgetattr(fd)
+            pressed = False
+            try:
+                tty.setraw(fd)
+                while time.time() < deadline and not done.is_set():
+                    r, _, _ = select.select([sys.stdin], [], [], 0.5)
+                    if r:
+                        os.read(fd, 1)
+                        pressed = True
+                        break
+            finally:
+                termios.tcsetattr(fd, termios.TCSADRAIN, old)
+                print(flush=True)  # raw 模式下补个换行，避免提示行错乱
+            if not pressed:
+                return
+    except Exception:
+        # raw 单键失败（如 stdin 被重定向中途失效）则退化为“回车即开”
+        try:
+            input()
+        except Exception:
+            return
+    if done.is_set():
+        return
+    _open_qr_in_browser(qr_url, login_url)
+
+
 def qr_login(cli: Client, device_id: str, timeout=120) -> dict:
     r = cli._req("https://account.xiaomi.com/pass/serviceLogin?_json=true&sid=mijia",
                  cookies={"deviceId": device_id, "passToken": "", "userId": ""})
@@ -85,8 +180,17 @@ def qr_login(cli: Client, device_id: str, timeout=120) -> dict:
     print("请用【米家 APP】扫码登录（无密码、无短信）：")
     print("二维码图片:", login_data.get("qr"))
     print("扫码内容:", login_data.get("loginUrl"))
-    print(f"等待扫码 {timeout}s …", flush=True)
-    lp = _strip(cli._req(login_data["lp"], timeout=timeout + 10))
+    print(f"等待扫码 {timeout}s（按任意键/回车即在浏览器展示二维码，直接扫码可不理）…",
+          flush=True)
+    _done = threading.Event()
+    threading.Thread(target=_wait_key_and_open,
+                     args=(login_data.get("qr"), login_data.get("loginUrl"),
+                           _done, timeout),
+                     daemon=True).start()
+    try:
+        lp = _strip(cli._req(login_data["lp"], timeout=timeout + 10))
+    finally:
+        _done.set()
     if lp.get("code") != 0:
         raise RuntimeError(f"扫码登录失败: {lp}")
     auth = {k: lp[k] for k in ("psecurity", "nonce", "ssecurity", "passToken",
