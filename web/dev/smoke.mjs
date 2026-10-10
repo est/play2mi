@@ -5,6 +5,7 @@
  * 干什么：不联网，用"可替换的 fetch 实现"验证 core.js 的请求构造与协议逻辑
  *   1. Mina.deviceList / ubus / play_url fallback（对照 python 版行为）
  *   2. TTS / play_music 的 message JSON 载荷
+ *   3. 扫码登录走 longPolling/loginUrl（回归：别再直接请求 location）
  *
  * 用法：node dev/smoke.mjs
  * ========================================================================== */

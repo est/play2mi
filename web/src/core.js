@@ -123,6 +123,9 @@
       resp = await Play2xiaomi._fetchImpl(url, {
         method,
         body: body || undefined,
+        // 带 cookie：登录跳转链会把 serviceToken 以 Set-Cookie 落到 .mina.mi.com，
+        // 跨域响应不设 credentials 时浏览器不会保存这些 Cookie（同源请求无影响）。
+        credentials: "include",
         // 调用方的取消 signal 与超时取并集：任一触发即中止
         signal: signal ? AbortSignal.any([signal, timeoutSignal]) : timeoutSignal,
         headers: body ? { "Content-Type": "application/x-www-form-urlencoded" } : undefined,

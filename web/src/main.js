@@ -478,34 +478,12 @@ body.p2x-page{margin:0;background:#fff;color:#1f2329;
         el("div", { className: "p2x-status err", data: { err: "" }, hidden: "" }),
         el("div", { className: "p2x-qr", data: { qrbox: "" }, hidden: "" }),
         el("div", { className: "p2x-note", data: { qrurl: "" }, hidden: "" }),
-        el("div", { className: "p2x-status", data: { done: "" }, hidden: "" }),
-        el("div", { className: "p2x-row", data: { btns: "" }, hidden: "" },
-          el("button", { className: "p2x-btn", data: { acct: "close" } }, "✕ 关闭此窗口"),
-          el("button", { className: "p2x-btn", data: { acct: "cancel" }, hidden: "" }, "取消等待"),
-          el("button", { className: "p2x-btn primary", data: { acct: "retry" }, hidden: "" }, "重试"))),
+        el("div", { className: "p2x-status", data: { done: "" }, hidden: "" })),
       el("div", { className: "p2x-logtitle", text: "运行日志" }),
       el("div", { className: "p2x-log", data: { log: "" } }),
       el("div", { className: "p2x-foot" },
         el("span", { text: "登录只发生在你的浏览器里，服务器不经手凭证" })),
     );
-    root.addEventListener("click", (e) => {
-      const btn = e.target.closest("[data-acct]");
-      if (!btn) return;
-      switch (btn.dataset.acct) {
-        case "close": window.close(); break;
-        case "cancel": {
-          state.abortLogin?.abort();
-          const phase = $('[data-phase=""]', state.panel);
-          if (phase) {
-            phase.textContent = "等待已取消";
-            $('[data-acct="cancel"]', state.panel).hidden = true;
-            $('[data-acct="retry"]', state.panel).hidden = false;
-          }
-          break;
-        }
-        case "retry": runLogin(); break;
-      }
-    });
     logBox = $(q.log);
     flushLogs();
     runLogin();
@@ -515,13 +493,10 @@ body.p2x-page{margin:0;background:#fff;color:#1f2329;
     const root = state.panel;
     const phase = $('[data-phase=""]', root);
     const err = $('[data-err=""]', root);
-    const btnCancel = $('[data-acct="cancel"]', root);
-    const btnRetry = $('[data-acct="retry"]', root);
     const qrbox = $('[data-qrbox=""]', root);
     const qrurl = $('[data-qrurl=""]', root);
     const done = $('[data-done=""]', root);
     err.hidden = true; qrbox.hidden = true; qrurl.hidden = true; done.hidden = true;
-    btnRetry.hidden = true; btnCancel.hidden = false;
     phase.textContent = "正在与小米账号服务端协商…";
 
     state.abortLogin?.abort();
@@ -556,13 +531,13 @@ body.p2x-page{margin:0;background:#fff;color:#1f2329;
       });
       if (signal.aborted) return;
       log("runLogin: 成功 mode =", result.mode);
-      qrbox.hidden = true; qrurl.hidden = true; btnCancel.hidden = true; btnRetry.hidden = false;
+      qrbox.hidden = true; qrurl.hidden = true;
       phase.textContent = result.mode === "already"
         ? "检测到浏览器里已有有效凭证，免扫码直接换票 ✓"
         : "扫码登录并换票 ✓";
       done.hidden = false;
       done.textContent = "小爱云票已就位（浏览器已在 .mina.mi.com 域种好服务 Cookie）。" +
-        "切回控制台标签页即可。";
+        "切回控制台标签页，或直接关闭本页。";
       try {
         window.opener?.postMessage({ type: "p2x:login-done" }, C.MINA_ORIGIN);
       } catch (_) { /* 控制台标签页已关也无妨，用户手动切回 */ }
@@ -572,8 +547,7 @@ body.p2x-page{margin:0;background:#fff;color:#1f2329;
       phase.textContent = "登录流程未完成";
       err.hidden = false;
       err.textContent = `${e?.message || e}${e?.body ? " · " + e.body : ""}` +
-        "（若浏览器里已有别的登录凭证，关掉本页重试）";
-      btnRetry.hidden = false; btnCancel.hidden = true;
+        "（可重新点一次书签重试）";
     }
   }
 
