@@ -5,3 +5,4 @@ thirdparty
 mina_qr_auth.json
 *.sublime-*
 work-fw
+web/dist
