@@ -10,7 +10,7 @@
  *
  * 用法：
  *   node build.js                        # 用默认占位 URL
- *   node build.js --url https://me.github.io/play2xiaomi/p2x.js
+ *   node build.js --url https://OWNER.github.io/play2xiaomi/p2x.js
  * ========================================================================== */
 "use strict";
 import { readFileSync, writeFileSync, mkdirSync } from "node:fs";
@@ -41,7 +41,7 @@ const banner = `/* =============================================================
 `;
 const dist =
   banner +
-  section("part 1 / 2 · core.js（协议层：登录、换票、Mina 客户端、QR 生成）", SRC("core.js")) + "\n" +
+  section("part 1 / 2 · core.js（协议层：登录、换票、Mina 客户端）", SRC("core.js")) + "\n" +
   section("part 2 / 2 · main.js（界面层：入口分派、面板 UI、登录编排）", SRC("main.js"));
 
 mkdirSync(join(ROOT, "dist"), { recursive: true });

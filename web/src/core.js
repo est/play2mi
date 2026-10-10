@@ -5,7 +5,6 @@
  *   L1  米家 APP 扫码登录（account.xiaomi.com 域内执行，免密免短信）
  *   换票  passToken → sid=micoapi 的 serviceToken（免密 exchange_sid）
  *   L2  小爱云 Mina 客户端（api2.mina.mi.com，播音 / TTS / 音量 / 状态）
- *   QR  纯 JS 二维码生成（零依赖，实现参考 Project Nayuki，MIT）
  *
  * 关键结论（已实测验证）：
  *   - 登录跳转链会把 serviceToken 以 Cookie 落在 .mina.mi.com、userId 落在
@@ -20,7 +19,7 @@
  * ========================================================================== */
 (() => {
   "use strict";
-  const P2X = (globalThis.P2X = globalThis.P2X || {});
+  const Play2xiaomi = (globalThis.Play2xiaomi = globalThis.Play2xiaomi || {});
 
   /* ------------------------------------------------------------------ 常量 */
 
@@ -97,12 +96,12 @@
   }
 
   // 便于测试替换的实现点（正式环境即 globalThis.fetch）
-  P2X._fetchImpl = (url, options) => fetch(url, options);
+  Play2xiaomi._fetchImpl = (url, options) => fetch(url, options);
 
   async function request(url, { timeout = 25000, method = "GET", body = null, signal } = {}) {
     let resp;
     try {
-      resp = await P2X._fetchImpl(url, {
+      resp = await Play2xiaomi._fetchImpl(url, {
         method,
         body: body || undefined,
         signal: signal || AbortSignal.timeout(timeout),
@@ -325,302 +324,15 @@
     }
   }
 
-  /* ------------------------------------------------- QR 生成（零依赖纯 JS）
-   * 实现参考 Project Nayuki《QR-Code-generator》(MIT License, 公开算法与
-   * 常量表)，https://www.nayuki.io/page/qr-code-generator-library
-   * 本实现仅为免依赖的精简版：字节段、全部版本 1-40、纠错等级 M。
-   * 说明：主路径展示官方 login.qr 图片，此生成器是缺图时的兜底。
-   */
-
-  // //0,1, 2, 3, 4, 5, 6, 7, 8, 9,10, 11, 12, 13, 14, 15, 16, 17, 18, 19 … 40
-  const QR_ECC_M = [
-    -1, 10, 16, 26, 18, 24, 16, 18, 22, 22, 26, 30, 22, 22, 24, 24, 28,
-    28, 26, 26, 26, 26, 28, 28, 28, 28, 28, 28, 28, 28, 28, 28, 28, 28,
-    28, 28, 28, 28, 28, 28, 28,
-  ];
-  const QR_BLOCKS_M = [
-    -1, 1, 1, 1, 2, 2, 4, 4, 4, 5, 5, 5, 8, 9, 9, 10, 10, 11, 13, 14, 16,
-    17, 17, 18, 20, 21, 23, 25, 26, 28, 29, 31, 33, 35, 37, 38, 40, 43, 45, 47, 49,
-  ];
-
-  function qrRawDataModules(ver) {
-    let result = (16 * ver + 128) * ver + 64;
-    if (ver >= 2) {
-      const numAlign = Math.floor(ver / 7) + 2;
-      result -= (25 * numAlign - 10) * numAlign - 55;
-      if (ver >= 7) result -= 36;
-    }
-    return result;
-  }
-
-  function qrDataCodewords(ver) {
-    return Math.floor(qrRawDataModules(ver) / 8) - QR_ECC_M[ver] * QR_BLOCKS_M[ver];
-  }
-
-  // GF(2^8 / 0x11D) 俄罗斯农民乘法
-  function rsMul(x, y) {
-    let z = 0;
-    for (let i = 7; i >= 0; i--) {
-      z = (z << 1) ^ ((z >>> 7) * 0x11d);
-      z ^= ((y >>> i) & 1) * x;
-    }
-    return z & 0xff;
-  }
-
-  function rsDivisor(degree) {
-    const result = new Array(degree).fill(0);
-    result[degree - 1] = 1;
-    let root = 1;
-    for (let i = 0; i < degree; i++) {
-      for (let j = 0; j < degree; j++) {
-        result[j] = rsMul(result[j], root);
-        if (j + 1 < degree) result[j] ^= result[j + 1];
-      }
-      root = rsMul(root, 0x02);
-    }
-    return result;
-  }
-
-  function rsRemainder(data, divisor) {
-    const result = divisor.map(() => 0);
-    for (const b of data) {
-      const factor = b ^ result.shift();
-      result.push(0);
-      divisor.forEach((coef, i) => (result[i] ^= rsMul(coef, factor)));
-    }
-    return result;
-  }
-
-  /** 生成 QR 模块矩阵 {size, modules: boolean[][]} */
-  function qrGenerate(text) {
-    const bytes = new TextEncoder().encode(text);
-
-    let version = 1;
-    while (version <= 40) {
-      const ccBits = version < 10 ? 8 : 16;
-      if (4 + ccBits + bytes.length * 8 <= qrDataCodewords(version) * 8) break;
-      version++;
-    }
-    if (version > 40) throw new Error("QR 数据过长（>2953 字节）");
-
-    // ---- 位流：模式0100 + 长度 + 数据 + 终止 + 字节对齐 + EC 轮替填充 ----
-    const bits = [];
-    const push = (val, len) => {
-      for (let i = len - 1; i >= 0; i--) bits.push((val >>> i) & 1);
-    };
-    push(0x4, 4);
-    push(bytes.length, version < 10 ? 8 : 16);
-    for (const b of bytes) push(b, 8);
-    const cap = qrDataCodewords(version) * 8;
-    push(0, Math.min(4, cap - bits.length));
-    while (bits.length % 8) bits.push(0);
-    for (let pad = 0xec; bits.length < cap; pad ^= 0xec ^ 0x11) push(pad, 8);
-    const dataCw = [];
-    for (let i = 0; i < bits.length; i += 8) {
-      let byte = 0;
-      for (let j = 0; j < 8; j++) byte = (byte << 1) | bits[i + j];
-      dataCw.push(byte);
-    }
-
-    // ---- 网格与功能图形 ----
-    const size = version * 4 + 17;
-    const blank = () => Array.from({ length: size }, () => new Array(size).fill(false));
-    const modules = blank();
-    const isFunc = blank();
-    const setFn = (x, y, dark) => { modules[y][x] = dark; isFunc[y][x] = true; };
-
-    for (let i = 0; i < size; i++) {
-      setFn(6, i, i % 2 === 0);
-      setFn(i, 6, i % 2 === 0);
-    }
-    const finder = (cx, cy) => {
-      for (let dy = -4; dy <= 4; dy++)
-        for (let dx = -4; dx <= 4; dx++) {
-          const x = cx + dx, y = cy + dy;
-          if (x >= 0 && x < size && y >= 0 && y < size) {
-            const d = Math.max(Math.abs(dx), Math.abs(dy));
-            setFn(x, y, d !== 2 && d !== 4);
-          }
-        }
-    };
-    finder(3, 3); finder(size - 4, 3); finder(3, size - 4);
-
-    if (version !== 1) {
-      const numAlign = Math.floor(version / 7) + 2;
-      const step = Math.floor((version * 8 + numAlign * 3 + 5) / (numAlign * 4 - 4)) * 2;
-      const pos = [6];
-      for (let p = size - 7; pos.length < numAlign; p -= step) pos.splice(1, 0, p);
-      for (let i = 0; i < pos.length; i++)
-        for (let j = 0; j < pos.length; j++)
-          if (!(i === 0 && j === 0 || i === 0 && j === pos.length - 1 || i === pos.length - 1 && j === 0)) {
-            const aa = pos[i], bb2 = pos[j];
-            for (let dy = -2; dy <= 2; dy++)
-              for (let dx = -2; dx <= 2; dx++)
-                setFn(aa + dx, bb2 + dy, Math.max(Math.abs(dx), Math.abs(dy)) !== 1);
-          }
-    }
-
-    const drawFormat = (mask) => {
-      const data = (0 << 3) | mask; // MEDIUM 的 formatBits = 0
-      let rem = data;
-      for (let i = 0; i < 10; i++) rem = (rem << 1) ^ ((rem >>> 9) * 0x537);
-      const b = (data << 10 | rem) ^ 0x5412;
-      const bit = (i) => ((b >>> i) & 1) !== 0;
-      for (let i = 0; i <= 5; i++) setFn(8, i, bit(i));
-      setFn(8, 7, bit(6)); setFn(8, 8, bit(7)); setFn(7, 8, bit(8));
-      for (let i = 9; i < 15; i++) setFn(14 - i, 8, bit(i));
-      for (let i = 0; i < 8; i++) setFn(size - 1 - i, 8, bit(i));
-      for (let i = 8; i < 15; i++) setFn(8, size - 15 + i, bit(i));
-      setFn(8, size - 8, true);
-    };
-    if (version >= 7) {
-      let rem = version;
-      for (let i = 0; i < 12; i++) rem = (rem << 1) ^ ((rem >>> 11) * 0x1f25);
-      const b = version << 12 | rem;
-      const bit = (i) => ((b >>> i) & 1) !== 0;
-      for (let i = 0; i < 18; i++) {
-        const a = size - 11 + i % 3, c = Math.floor(i / 3);
-        setFn(a, c, bit(i));
-        setFn(c, a, bit(i));
-      }
-    }
-    drawFormat(0); // 先画占位，掩码选定后重画
-
-    // ---- ECC 插入与交织 ----
-    const numBlocks = QR_BLOCKS_M[version];
-    const blockEcc = QR_ECC_M[version];
-    const rawCw = Math.floor(qrRawDataModules(version) / 8);
-    const numShort = numBlocks - rawCw % numBlocks;
-    const shortLen = Math.floor(rawCw / numBlocks);
-    const div = rsDivisor(blockEcc);
-    const blocks = [];
-    for (let i = 0, k = 0; i < numBlocks; i++) {
-      const dat = dataCw.slice(k, k + shortLen - blockEcc + (i < numShort ? 0 : 1));
-      k += dat.length;
-      const ecc = rsRemainder(dat, div);
-      if (i < numShort) dat.push(0);
-      blocks.push(dat.concat(ecc));
-    }
-    const allCw = [];
-    for (let i = 0; i < blocks[0].length; i++)
-      blocks.forEach((blk, j) => {
-        if (i !== shortLen - blockEcc || j >= numShort) allCw.push(blk[i]);
-      });
-
-    // ---- 之字扫描放码 ----
-    let bi = 0;
-    for (let right = size - 1; right >= 1; right -= 2) {
-      if (right === 6) right = 5;
-      for (let vert = 0; vert < size; vert++) {
-        for (let j = 0; j < 2; j++) {
-          const x = right - j;
-          const upward = ((right + 1) & 2) === 0;
-          const y = upward ? size - 1 - vert : vert;
-          if (!isFunc[y][x] && bi < allCw.length * 8) {
-            modules[y][x] = ((allCw[bi >>> 3] >>> (7 - (bi & 7))) & 1) !== 0;
-            bi++;
-          }
-        }
-      }
-    }
-
-    // ---- 掩码 ----
-    const applyMask = (m) => {
-      for (let y = 0; y < size; y++)
-        for (let x = 0; x < size; x++) {
-          let invert;
-          switch (m) {
-            case 0: invert = (x + y) % 2 === 0; break;
-            case 1: invert = y % 2 === 0; break;
-            case 2: invert = x % 3 === 0; break;
-            case 3: invert = (x + y) % 3 === 0; break;
-            case 4: invert = (Math.floor(x / 3) + Math.floor(y / 2)) % 2 === 0; break;
-            case 5: invert = (x * y) % 2 + (x * y) % 3 === 0; break;
-            case 6: invert = ((x * y) % 2 + (x * y) % 3) % 2 === 0; break;
-            default: invert = ((x + y) % 2 + (x * y) % 3) % 2 === 0;
-          }
-          if (!isFunc[y][x] && invert) modules[y][x] = !modules[y][x];
-        }
-    };
-    const penaltyScore = () => {
-      let result = 0;
-      const N1 = 3, N2 = 3, N3 = 40, N4 = 10;
-      const linePenalty = (get) => {
-        let runColor = false, runLen = 0;
-        const history = [0, 0, 0, 0, 0, 0, 0];
-        let score = 0;
-        const addHistory = (len) => {
-          if (history[0] === 0) len += size;
-          history.pop(); history.unshift(len);
-        };
-        const countPatterns = () => {
-          const n = history[1];
-          const core = n > 0 && history[2] === n && history[3] === n * 3 &&
-            history[4] === n && history[5] === n;
-          return (core && history[0] >= n * 4 && history[6] >= n ? 1 : 0) +
-                 (core && history[6] >= n * 4 && history[0] >= n ? 1 : 0);
-        };
-        const terminate = (color, len) => {
-          if (color) { addHistory(len); len = 0; }
-          len += size;
-          addHistory(len);
-          return countPatterns();
-        };
-        for (let k = 0; k < size; k++) {
-          const color = get(k);
-          if (color === runColor) {
-            runLen++;
-            if (runLen === 5) score += N1;
-            else if (runLen > 5) score += 1;
-          } else {
-            addHistory(runLen);
-            if (!runColor) score += countPatterns() * N3;
-            runColor = color;
-            runLen = 1;
-          }
-        }
-        score += terminate(runColor, runLen) * N3;
-        return score;
-      };
-      for (let y = 0; y < size; y++)
-        result += linePenalty((x) => modules[y][x]);
-      for (let x = 0; x < size; x++)
-        result += linePenalty((y) => modules[y][x]);
-      for (let y = 0; y < size - 1; y++)
-        for (let x = 0; x < size - 1; x++) {
-          const c = modules[y][x];
-          if (c === modules[y][x + 1] && c === modules[y + 1][x] && c === modules[y + 1][x + 1])
-            result += N2;
-        }
-      let dark = 0;
-      for (const row of modules) dark += row.reduce((s, c) => s + (c ? 1 : 0), 0);
-      const total = size * size;
-      const k = Math.ceil(Math.abs(dark * 20 - total * 10) / total) - 1;
-      result += k * N4;
-      return result;
-    };
-    let mask = 0, minPenalty = Infinity;
-    for (let m = 0; m < 8; m++) {
-      applyMask(m);
-      drawFormat(m);
-      const p = penaltyScore();
-      if (p < minPenalty) { mask = m; minPenalty = p; }
-      applyMask(m); // XOR 自逆
-    }
-    applyMask(mask);
-    drawFormat(mask);
-    return { size, modules, version, mask };
-  }
-
   /* ------------------------------------------------------------- 对外导出 */
 
-  Object.assign(P2X, {
+  Object.assign(Play2xiaomi, {
     // 协议常量
     ACCOUNT_ORIGIN, ACCOUNT_HOST, MINA_ORIGIN, MINA_HOST, MINA_LANDING,
     LOGIN_PAGE, USE_PLAY_MUSIC_API,
     // 客户端与流程
     Mina, loginMina, qrLogin, exchangeMicoapi, ensureDeviceId,
     // 工具
-    ApiError, rand, getCookie, setCookie, stripXiaomi, sleep, qrGenerate,
+    ApiError, rand, getCookie, setCookie, stripXiaomi, sleep,
   });
 })();

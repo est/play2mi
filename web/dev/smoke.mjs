@@ -5,7 +5,6 @@
  * 干什么：不联网，用"可替换的 fetch 实现"验证 core.js 的请求构造与协议逻辑
  *   1. Mina.deviceList / ubus / play_url fallback（对照 python 版行为）
  *   2. TTS / play_music 的 message JSON 载荷
- *   3. qrGenerate 的版本选择与矩阵合法性（可选 node --no-warnings 校验）
  *
  * 用法：node dev/smoke.mjs
  * ========================================================================== */
@@ -16,8 +15,8 @@ import { fileURLToPath } from "node:url";
 
 const ROOT = dirname(fileURLToPath(import.meta.url));
 await import("file://" + join(ROOT, "..", "src", "core.js"));
-const C = globalThis.P2X;
-assert.ok(C, "core.js 应挂出 globalThis.P2X");
+const C = globalThis.Play2xiaomi;
+assert.ok(C, "core.js 应挂出 globalThis.Play2xiaomi");
 
 /* ---------------- 1. 请求构造：拦截 _fetchImpl，比对 URL 与 body ---------------- */
 
@@ -93,32 +92,9 @@ assert.equal(JSON.parse(new URLSearchParams(calls[0].opts.body).get("message")).
 assert.equal(JSON.parse(new URLSearchParams(calls[1].opts.body).get("message")).action, "stop");
 assert.equal(JSON.parse(new URLSearchParams(calls[2].opts.body).get("message")).volume, 40);
 
-/* ---------------- 2. QR 生成器：版本选择与矩阵形状 ---------------- */
-
-const cases = [
-  ["http://x", 1],                                     // 8 字节 → v1-M（容量14）
-  ["https://c.xiaomi.com/QR/" + "a".repeat(40), 5],    // 65 字节 → v5-M（容量86）
-  ["https://example.com/" + "u".repeat(300), ">=2"],   // 大数据 → 多版本
-];
-for (const [text, expect] of cases) {
-  const qr = C.qrGenerate(text);
-  assert.equal(qr.modules.length, qr.size);
-  assert.ok(qr.modules.every((r) => r.length === qr.size));
-  assert.ok(qr.size === qr.version * 4 + 17);
-  if (typeof expect === "number") assert.equal(qr.version, expect);
-  else assert.ok(qr.version >= 2);
-  // 宏观黑白比例不至于离谱（功能图形齐全的粗校验）
-  let dark = 0;
-  qr.modules.forEach((r) => r.forEach((c) => (dark += c ? 1 : 0)));
-  assert.ok(dark > qr.size * qr.size * 0.2 && dark < qr.size * qr.size * 0.7);
-}
-
-// 数据太长必须抛出
-assert.throws(() => C.qrGenerate("x".repeat(3000)));
-
-/* ---------------- 3. stripXiaomi / rand ---------------- */
+/* ---------------- 2. stripXiaomi / rand ---------------- */
 assert.deepEqual(C.stripXiaomi('&&&START&&&{"code":0}'), { code: 0 });
 assert.equal(C.rand(16).length, 16);
 assert.ok(new Set(C.rand(30).split("")).size === 30, "rand 不放回抽样");
 
-console.log("✅ smoke 全部通过：device_list URL / play_url fallback / ubus 载荷 / QR 矩阵");
+console.log("✅ smoke 全部通过：device_list URL / play_url fallback / ubus 载荷 / stripXiaomi·rand");

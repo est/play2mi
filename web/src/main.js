@@ -14,8 +14,8 @@
  * ========================================================================== */
 (() => {
   "use strict";
-  const C = globalThis.P2X;
-  if (!C) throw new Error("P2X 未初始化（core.js 未先行加载）");
+  const C = globalThis.Play2xiaomi;
+  if (!C) throw new Error("Play2xiaomi 未初始化（core.js 未先行加载）");
 
   const KEY_DEVICE = "p2x:lastDevice";
   // player_get_play_status 的 status 数值 → 文案（未知值则原样显示）
@@ -84,7 +84,6 @@
 .p2x-note{color:#9aa0ad;font-size:11.5px}
 .p2x-qr{background:#fff;border-radius:10px;padding:10px;display:flex;flex-direction:column;
   align-items:center;gap:4px;align-self:center}
-.p2x-qr canvas{image-rendering:pixelated}
 .p2x-foot{padding:8px 14px 10px;border-top:1px solid rgba(255,255,255,.08);display:flex;gap:10px;
   color:#7d838f;font-size:11px;align-items:center}
 .p2x-link{color:#8ab4f8;cursor:pointer;text-decoration:underline}
@@ -236,7 +235,7 @@
         (forced === "account" && location.origin !== C.ACCOUNT_ORIGIN)) {
       const root = injectShell();
       forced === "mina" ? setupMina(root) : setupAccount();
-      console.info("[p2x] dev preview 强制分支：" + forced);
+      console.info("[play2xiaomi] dev preview 强制分支：" + forced);
       return;
     }
     if (location.origin === C.ACCOUNT_ORIGIN) {
@@ -258,7 +257,7 @@
     // 登录弹窗完成 → 重新探测（不做任何自动停止，原则：不打断在播内容）
     window.addEventListener("message", (e) => {
       if (e.origin === C.ACCOUNT_ORIGIN && e.data?.type === "p2x:login-done") {
-        console.info("[p2x] 登录完成，重新探测");
+        console.info("[play2xiaomi] 登录完成，重新探测");
         probe();
       }
     });
@@ -275,7 +274,7 @@
       setView("main");
       refreshStatus(); // 面板打开即读当前播放状态，不动音箱
     } catch (e) {
-      console.warn("[p2x] device_list 失败", e);
+      console.warn("[play2xiaomi] device_list 失败", e);
       setView("login");
     }
   }
@@ -321,7 +320,7 @@
       node.textContent = "状态获取失败（可能票据过期，可重新登录）";
       node.classList.remove("p2x-playing");
       if (e?.kind === "api") setView("login");
-      console.warn("[p2x] status 失败", e);
+      console.warn("[play2xiaomi] status 失败", e);
     }
   }
 
@@ -471,27 +470,16 @@
           qrbox.hidden = false;
           qrbox.innerHTML = "";
           qrbox.append(el("div", { className: "p2x-note", text: "请用【米家 APP】扫码（免密码、免短信）" }));
-          const canvasFromUrl = () => { // 官方图缺省 → 用内置 QR 生成器兜底
-            const qrMatrix = C.qrGenerate(stage.loginUrl);
-            const scale = 5, margin = 3;
-            const px = (qrMatrix.size + margin * 2) * scale;
-            const canvas = el("canvas");
-            canvas.width = canvas.height = px;
-            const ctx = canvas.getContext("2d");
-            ctx.fillStyle = "#fff";
-            ctx.fillRect(0, 0, px, px);
-            ctx.fillStyle = "#000";
-            qrMatrix.modules.forEach((row, y) => row.forEach((dark, x) => {
-              if (dark) ctx.fillRect((x + margin) * scale, (y + margin) * scale, scale, scale);
-            }));
-            qrbox.append(canvas);
-          };
+          // TODO: 官方 login.qr 缺失/加载失败时这里没有二维码可扫——以后再接一个
+          //       第三方二维码服务或库来兜底（之前内置的像素生成器已移除）。
+          const failed = () => qrbox.append(
+            el("div", { className: "p2x-note", text: "二维码图片未取到，请点「重试」或关闭重开" }));
           if (stage.qr) {
-            const img = el("img", { src: stage.qr, alt: "登录二维码", width: 240, height: 240,
-              onerror: () => { img.remove(); canvasFromUrl(); } });
+            const img = el("img", { src: stage.qr, alt: "登录二维码", width: 240, height: 240 });
+            img.addEventListener("error", () => { img.remove(); failed(); });
             qrbox.append(img);
           } else {
-            canvasFromUrl();
+            failed();
           }
           qrurl.hidden = false;
           qrurl.textContent = "扫码内容：" + stage.loginUrl;
@@ -511,7 +499,7 @@
       } catch (_) { /* 控制台标签页已关也无妨，用户手动切回 */ }
     } catch (e) {
       if (signal.aborted || e?.name === "AbortError") return; // 旧尝试被新登录取代/取消
-      console.warn("[p2x] 登录失败", e);
+      console.warn("[play2xiaomi] 登录失败", e);
       phase.textContent = "登录流程未完成";
       err.hidden = false;
       err.textContent = `${e?.message || e}${e?.body ? " · " + e.body : ""}` +

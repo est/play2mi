@@ -12,7 +12,7 @@
 ```
 web/
   index.src.html    指南页模板（拖拽安装书签 + 使用教程）；build 时注入托管地址
-  src/core.js       协议层（无 DOM）：扫码登录、免密换票、Mina 客户端、纯JS二维码
+  src/core.js       协议层（无 DOM）：扫码登录、免密换票、Mina 客户端
   src/main.js       界面层：入口分派（任意页面/mina/account 三环境）、面板 UI、登录编排
   dist/             构建产物（p2x.js + index.html），GitHub Pages 托管的就这两个文件
   build.js          纯拼接构建（不压缩、不转译、保留可读性）+ node --check 自检
@@ -27,7 +27,7 @@ web/
   并顺手补 `dev/smoke.mjs` 的桩校验。
 - **main.js 只管编排与界面**：入口分派逻辑见 `init()`；面板是纯构建的 overlay，
   关闭不打断播放；与登录弹窗的通信走 `postMessage`（origin 校验严格）。
-- 若日后规模变大：core.js 可按 `QR 生成` / `登录流程` / `Mina 客户端` 三块拆分，
+- 若日后规模变大：core.js 可按 `登录流程` / `Mina 客户端` 两块拆分，
   build.js 的拼接列表加一行即可；或改用任意打包器输出单文件（目前的拼接是刻意选的）。
 
 ## 构建
