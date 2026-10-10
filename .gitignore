@@ -3,4 +3,5 @@ __pycache__
 thirdparty
 .tmp
 mina_qr_auth.json
-
+*.sublime-*
+work-fw
