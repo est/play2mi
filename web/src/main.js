@@ -67,66 +67,84 @@
   /** 自定义选择器简写：p2x 井区查找 */
   const $ = (sel, root) => (root || state.panel).querySelector(sel);
 
+  // —— 页面日志：core.js/main.js 的每条 log 都镜像到此，既便于排查也填充页面 ——
+  const pageLogs = [];
+  let logBox = null;
+  const lineEl = (level, text) =>
+    el("div", { className: "ln" + (level === "warn" ? " w" : ""), text });
+  function flushLogs() {
+    if (!logBox) return;
+    logBox.replaceChildren();
+    for (const { level, text } of pageLogs) logBox.append(lineEl(level, text));
+    logBox.scrollTop = logBox.scrollHeight;
+  }
+  function pushLog(level, text) {
+    const stamped = new Date().toLocaleTimeString() + "  " + text;
+    pageLogs.push({ level, text: stamped });
+    if (pageLogs.length > 800) pageLogs.shift();
+    if (logBox) {
+      logBox.append(lineEl(level, stamped));
+      logBox.scrollTop = logBox.scrollHeight;
+    }
+  }
+  C.onLog = pushLog; // core.js 的 log/warn 一并转到这里
+
   const css = `
-#p2x-fab{position:fixed;right:16px;bottom:16px;width:46px;height:46px;border-radius:50%;
-  background:rgba(24,26,32,.92);color:#ff8a3c;font-size:22px;line-height:46px;text-align:center;
-  cursor:pointer;z-index:2147483000;box-shadow:0 4px 18px rgba(0,0,0,.4);border:1px solid rgba(255,255,255,.14);}
-#p2x-root{position:fixed;right:16px;top:16px;width:352px;max-height:min(86vh,740px);
-  background:rgba(22,24,30,.96);color:#e8eaf0;font:13px/1.5 -apple-system,"PingFang SC","Segoe UI",sans-serif;
-  border-radius:14px;box-shadow:0 10px 40px rgba(0,0,0,.5);border:1px solid rgba(255,255,255,.12);
-  z-index:2147483001;display:flex;flex-direction:column;overflow:hidden;}
-#p2x-root *{box-sizing:border-box;}
-.p2x-head{display:flex;align-items:center;gap:8px;padding:11px 14px;font-weight:600;font-size:14px;
-  border-bottom:1px solid rgba(255,255,255,.08);}
+body.p2x-page{margin:0;background:#fff;color:#1f2329;
+  font:14px/1.65 -apple-system,"PingFang SC","Segoe UI",sans-serif;}
+#p2x-root{max-width:680px;margin:0 auto;padding:34px 20px 70px;}
+.p2x-head{display:flex;align-items:center;gap:8px;font-size:20px;font-weight:700;margin:0 0 18px;}
 .p2x-head .sp{flex:1}
-.p2x-btn{cursor:pointer;padding:3px 9px;border-radius:8px;border:0;background:rgba(255,255,255,.09);
-  color:inherit;font:inherit;white-space:nowrap}
-.p2x-btn:hover{background:rgba(255,255,255,.18)}
-.p2x-btn.primary{background:#ff6900;color:#fff}
-.p2x-btn:disabled{opacity:.4;cursor:not-allowed}
-.p2x-body{padding:12px 14px;overflow-y:auto;display:flex;flex-direction:column;gap:10px;}
+.p2x-btn{cursor:pointer;padding:7px 13px;border-radius:9px;border:1px solid #e1e5ea;background:#f5f6f8;
+  color:inherit;font:inherit;white-space:nowrap;text-decoration:none;display:inline-block}
+.p2x-btn:hover{background:#eceef2}
+.p2x-btn.primary{background:#ff6900;border-color:#ff6900;color:#fff}
+.p2x-btn.primary:hover{background:#f35f00}
+.p2x-btn:disabled{opacity:.45;cursor:not-allowed}
+.p2x-body{display:flex;flex-direction:column;gap:12px}
 .p2x-row{display:flex;gap:8px;align-items:center}
-.p2x-row label{flex:none;color:#9aa0ad}
-.p2x-select,.p2x-input{flex:1;min-width:0;background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.12);
-  color:inherit;border-radius:8px;padding:6px 8px;font:inherit;width:100%}
-.p2x-status{color:#9aa0ad;min-height:16px;font-size:12px;word-break:break-all}
-.p2x-status.err{color:#ff7b72}
-.p2x-playing{color:#8ce68c;font-weight:600}
+.p2x-row label{flex:none;color:#6b7280}
+.p2x-select,.p2x-input{flex:1;min-width:0;background:#fff;border:1px solid #d8dde3;
+  color:inherit;border-radius:9px;padding:8px 10px;font:inherit;width:100%}
+.p2x-status{color:#6b7280;min-height:18px;font-size:13px;word-break:break-all}
+.p2x-status.err{color:#d23b3b}
+.p2x-playing{color:#1a7f37;font-weight:600}
 .p2x-view{display:none}.p2x-view.on{display:block}
-.p2x-note{color:#9aa0ad;font-size:11.5px}
-.p2x-qr{background:#fff;border-radius:10px;padding:10px;display:flex;flex-direction:column;
-  align-items:center;gap:4px;align-self:center}
-.p2x-foot{padding:8px 14px 10px;border-top:1px solid rgba(255,255,255,.08);display:flex;gap:10px;
-  color:#7d838f;font-size:11px;align-items:center}
-.p2x-link{color:#8ab4f8;cursor:pointer;text-decoration:underline}
-.p2x-detail{margin:0;font-size:11px;color:#9aa0ad;word-break:break-all;white-space:pre-wrap}
+.p2x-note{color:#8b93a1;font-size:12px}
+.p2x-qr{background:#f8f9fb;border:1px solid #eceef2;border-radius:12px;padding:12px;
+  display:flex;flex-direction:column;align-items:center;gap:8px}
+.p2x-qr img{width:240px;height:240px}
+.p2x-foot{margin-top:22px;padding-top:12px;border-top:1px solid #eceff3;
+  color:#98a2b3;font-size:11.5px;display:flex;gap:10px;align-items:center}
+.p2x-link{color:#2563eb;cursor:pointer;text-decoration:underline}
+.p2x-detail{margin:0;font-size:12px;color:#6b7280;word-break:break-all;white-space:pre-wrap}
 .p2x-detail summary{cursor:pointer}
 .p2x-toast{position:fixed;left:50%;bottom:32px;transform:translateX(-50%);z-index:2147483002;
-  background:rgba(22,24,30,.96);color:#e8eaf0;padding:10px 18px;border-radius:10px;
-  border:1px solid rgba(255,255,255,.12);font:13px -apple-system,"PingFang SC",sans-serif;
-  box-shadow:0 8px 30px rgba(0,0,0,.5);max-width:70vw}
+  background:#1f2329;color:#fff;padding:10px 18px;border-radius:10px;
+  font:13px -apple-system,"PingFang SC",sans-serif;box-shadow:0 8px 30px rgba(0,0,0,.25);max-width:70vw}
+.p2x-logtitle{margin:26px 0 8px;font-size:12px;color:#98a2b3;letter-spacing:.03em}
+.p2x-log{background:#0f1115;color:#d7dbe0;border-radius:10px;padding:12px 14px;min-height:120px;
+  max-height:300px;overflow:auto;font:12px/1.6 ui-monospace,SFMono-Regular,Menlo,monospace}
+.p2x-log .ln{white-space:pre-wrap;word-break:break-all}
+.p2x-log .w{color:#ffb86c}
 `;
 
-  function injectShell() {
-    document.head.append(el("style", { id: "p2x-style", text: css }));
-    const fab = el("button", {
-      id: "p2x-fab", title: "播放到小爱（点击开合）",
-      on: { click: togglePanel },
-    }, "🔊");
-    const root = el("div", { id: "p2x-root" });
-    document.body.append(fab, root);
-    log("injectShell: 已注入样式 / 悬浮球 / 面板根（body 存在=" + !!document.body + "）");
-    return root;
+  /** 清空原页面（mina 域下就是个 403/404 空壳），铺上我们自己的白底 */
+  function resetPage() {
+    document.title = "播放到小爱";
+    document.head.innerHTML =
+      '<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">';
+    document.body.replaceChildren();
+    document.body.className = "p2x-page";
   }
 
-  function togglePanel() {
-    const root = document.getElementById("p2x-root");
-    if (root) {
-      root.style.display = root.style.display === "none" ? "flex" : "none";
-      log("togglePanel: display =", root.style.display || "(默认 flex)");
-    } else {
-      warn("togglePanel: 找不到 #p2x-root");
-    }
+  function injectShell() {
+    resetPage();
+    document.head.append(el("style", { id: "p2x-style", text: css }));
+    const root = el("div", { id: "p2x-root" });
+    document.body.append(root);
+    log("injectShell: 已清空原页面并重绘为整页控制台");
+    return root;
   }
 
   function toast(text, ms = 5200) {
@@ -141,10 +159,7 @@
     log("buildPanel: 构建面板");
     state.panel = root;
     root.append(
-      el("div", { className: "p2x-head" },
-        "🔊 播放到小爱",
-        el("span", { className: "sp" }),
-        el("button", { className: "p2x-btn", data: { act: "min" } }, "收起")),
+      el("div", { className: "p2x-head" }, "🔊 播放到小爱"),
       el("div", { className: "p2x-body", data: { body: "" } },
         // —— 视图：加载中 ——
         view("loading", el("div", { className: "p2x-status", data: { load: "" } }, "连接中…")),
@@ -152,11 +167,11 @@
         view("login",
           el("div", null,
             el("div", { text: "还没有登录小爱云（或凭证过期）。" }),
-            el("div", { style: "height:8px" }),
-            el("button", { className: "p2x-btn primary", data: { act: "login" } }, "🔐 扫码登录"),
-            el("div", { style: "height:8px" }),
+            el("div", { style: "height:10px" }),
+            el("a", { className: "p2x-btn primary", href: C.LOGIN_PAGE, target: "_blank", rel: "noopener" }, "🔐 去扫码登录"),
+            el("div", { style: "height:10px" }),
             el("div", { className: "p2x-note",
-              text: "会打开小米账号登录页，用【米家 APP】扫码即可（免密码、免短信）。登录完成后自动回到本面板。" }))),
+              text: "会在新标签页打开小米账号登录页；请在那个页面里再点一次书签，即可看到二维码（免密码、免短信）。登录完成后自动回到本面板。" }))),
         // —— 视图：主面板 ——
         view("main",
           el("div", { className: "p2x-row" },
@@ -192,8 +207,10 @@
             el("summary", { text: "最近一次响应" }),
             el("div", { data: { rawBody: "" } })),
           el("div", { className: "p2x-status", data: { msg: "" } }))),
+      el("div", { className: "p2x-logtitle", text: "运行日志" }),
+      el("div", { className: "p2x-log", data: { log: "" } }),
       el("div", { className: "p2x-foot" },
-        el("span", { className: "p2x-link", data: { act: "relogin" }, text: "重新登录" }),
+        el("a", { className: "p2x-link", href: C.LOGIN_PAGE, target: "_blank", rel: "noopener", text: "重新登录" }),
         el("span", { style: "flex:1" }),
         el("span", { text: "无服务器 · 浏览器直连" })),
     );
@@ -207,6 +224,8 @@
 
     state.views = {};
     for (const v of root.querySelectorAll(".p2x-view")) state.views[v.dataset.viewName] = v;
+    logBox = $(q.log);
+    flushLogs();
     log("buildPanel: 完成，视图 =", Object.keys(state.views).join("/"));
   }
 
@@ -215,7 +234,7 @@
     load: '[data-load=""]', playing: '[data-playing=""]', msg: '[data-msg=""]',
     device: "select[data-device]", url: '[data-url=""]', tts: '[data-tts=""]',
     vol: '[data-vol=""]', volv: '[data-volv=""]', raw: '[data-raw=""]',
-    rawBody: '[data-rawbody=""]',
+    rawBody: '[data-rawbody=""]', log: '[data-log=""]',
   };
 
   /** 创建一个可切换的视图容器 */
@@ -250,7 +269,7 @@
   function init() {
     log("init: 触发（href=" + location.href + "，readyState=" + document.readyState + "）");
     try {
-      if (document.getElementById("p2x-root")) { log("init: 已注入过，改为开合面板"); togglePanel(); return; }
+      // 每次书签都带 ?t= 强制重新执行：直接清空原页面整页重绘，不做小窗叠加
       // 开发预览钩子：dev/preview.html 里可强制走某分支（window.__P2X_FORCE__='mina'|'account'）
       const forced = window.__P2X_FORCE__;
       if ((forced === "mina" && location.host !== C.MINA_HOST) ||
@@ -290,12 +309,15 @@
     log("setupMina: 开始");
     buildPanel(root);
     // 登录弹窗完成 → 重新探测（不做任何自动停止，原则：不打断在播内容）
-    window.addEventListener("message", (e) => {
+    // 每次重绘都会替换旧监听，避免多次点书签后累积、且旧闭包操作已移除的节点
+    if (window.__p2xMsgHandler) window.removeEventListener("message", window.__p2xMsgHandler);
+    window.__p2xMsgHandler = (e) => {
       if (e.origin === C.ACCOUNT_ORIGIN && e.data?.type === "p2x:login-done") {
         log("setupMina: 收到登录完成消息，重新探测");
         probe();
       }
-    });
+    };
+    window.addEventListener("message", window.__p2xMsgHandler);
     setView("loading");
     probe();
   }
@@ -367,11 +389,6 @@
 
   function onButton(actName) {
     log("onButton:", actName);
-    if (actName === "min") { togglePanel(); return; }
-    if (actName === "login" || actName === "relogin") {
-      window.open(C.LOGIN_PAGE, "p2x_login", "width=480,height=720");
-      return;
-    }
     switch (actName) {
       case "play": act("play"); break;
       case "tts": act("tts"); break;
@@ -455,9 +472,7 @@
     const root = document.getElementById("p2x-root");
     state.panel = root; // 让 $() 有根
     root.append(
-      el("div", { className: "p2x-head" }, "🔐 小爱云登录",
-        el("span", { className: "sp" }),
-        el("button", { className: "p2x-btn", on: { click: togglePanel } }, "收起")),
+      el("div", { className: "p2x-head" }, "🔐 小爱云登录"),
       el("div", { className: "p2x-body" },
         el("div", { className: "p2x-status", data: { phase: "" } }, "正在检查登录状态…"),
         el("div", { className: "p2x-status err", data: { err: "" }, hidden: "" }),
@@ -468,6 +483,8 @@
           el("button", { className: "p2x-btn", data: { acct: "close" } }, "✕ 关闭此窗口"),
           el("button", { className: "p2x-btn", data: { acct: "cancel" }, hidden: "" }, "取消等待"),
           el("button", { className: "p2x-btn primary", data: { acct: "retry" }, hidden: "" }, "重试"))),
+      el("div", { className: "p2x-logtitle", text: "运行日志" }),
+      el("div", { className: "p2x-log", data: { log: "" } }),
       el("div", { className: "p2x-foot" },
         el("span", { text: "登录只发生在你的浏览器里，服务器不经手凭证" })),
     );
@@ -489,6 +506,8 @@
         case "retry": runLogin(); break;
       }
     });
+    logBox = $(q.log);
+    flushLogs();
     runLogin();
   }
 
@@ -515,21 +534,23 @@
         onQr: (stage) => {
           log("runLogin: 收到二维码阶段（官方图：" + (stage.qr ? "有" : "无") + "）");
           qrbox.hidden = false;
-          qrbox.innerHTML = "";
-          qrbox.append(el("div", { className: "p2x-note", text: "请用【米家 APP】扫码（免密码、免短信）" }));
-          // TODO: 官方 login.qr 缺失/加载失败时这里没有二维码可扫——以后再接一个
-          //       第三方二维码服务或库来兜底（之前内置的像素生成器已移除）。
-          const failed = () => qrbox.append(
-            el("div", { className: "p2x-note", text: "二维码图片未取到，请点「重试」或关闭重开" }));
-          if (stage.qr) {
-            const img = el("img", { src: stage.qr, alt: "登录二维码", width: 240, height: 240 });
-            img.addEventListener("error", () => { img.remove(); failed(); });
-            qrbox.append(img);
+          qrbox.replaceChildren();
+          // 与 python 版一致：优先官方 qr 图片；缺图则用公开服务按 loginUrl 现场渲染
+          const src = stage.qr || (stage.loginUrl
+            ? "https://api.qrserver.com/v1/create-qr-code/?size=240x240&data="
+              + encodeURIComponent(stage.loginUrl)
+            : "");
+          if (src) {
+            qrbox.append(el("img", { src, alt: "登录二维码", width: 240, height: 240 }));
           } else {
-            failed();
+            qrbox.append(el("div", { className: "p2x-note", text: "未取到二维码地址" }));
           }
-          qrurl.hidden = false;
-          qrurl.textContent = "扫码内容：" + stage.loginUrl;
+          if (stage.loginUrl) {
+            qrurl.hidden = false;
+            qrurl.replaceChildren(
+              el("span", { text: "扫码内容（可新窗口打开或复制）：" }),
+              el("a", { href: stage.loginUrl, target: "_blank", rel: "noopener", text: stage.loginUrl }));
+          }
         },
         onPhase: (t) => { log("runLogin: 阶段 →", t); phase.textContent = t; },
       });

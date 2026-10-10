@@ -5,11 +5,11 @@ stream your $url music on xiaomi smart speakers
 
 ## features
 
-- No user/password login. Scan with your Mi Home qr-code. 不需要账号密码登录，通过扫码
+- No user/password login. Scan with your Mi Home qr-code. 不需要账号密码登录，通过 米家 app扫码
 - No OTP, no SMS, 不需要 两步验证
-- No third-party servers. Speaks directly to `mi.com` API. 不绕第三方服务器，直通官方API。
-- xiaomi API would block access from IDC IPs. 避免服务器触发小米API风控  yihong0618/xiaogpt#240
 - No client download nor install 不需要下载 和安装 客户端
+- Speaks directly to `mi.com` API. No third-parties 直通官方API，不绕第三方服务器
+- xiaomi API would block access from IDC IPs. 避免机房IP触发小米API风控  yihong0618/xiaogpt#240
 
 ## Known issues
 
@@ -56,8 +56,9 @@ node dev/smoke.mjs   # 冒烟（其实没啥测的。AI搞的形式）
 
 ## 隐私
 
-票据全部在浏览器本地（`.mi.com` 域 Cookie，passToken 为 HttpOnly），本仓库无任何服务器
-参与运行期数据流。登出请在 account.xiaomi.com 手动退出。
+隐私信息全在本地浏览器（`.mi.com` 域 Cookie，passToken 为 HttpOnly）
+
+本仓库无任何服务器参与运行期数据流。登出请在 account.xiaomi.com 手动退出。
 
 
 ## reference

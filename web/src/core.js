@@ -21,9 +21,20 @@
   "use strict";
   const Play2xiaomi = (globalThis.Play2xiaomi = globalThis.Play2xiaomi || {});
 
-  // 调试日志：默认开启；执行 globalThis.Play2xiaomi.DEBUG = false 可整体静音
-  const log = (...a) => { if (Play2xiaomi.DEBUG !== false) console.info("[play2xiaomi]", ...a); };
-  const warn = (...a) => { if (Play2xiaomi.DEBUG !== false) console.warn("[play2xiaomi]", ...a); };
+  // 调试日志：默认开启；执行 globalThis.Play2xiaomi.DEBUG = false 可整体静音。
+  // 若设置了 onLog(level, text)，每条日志会额外转给页面层（main.js）显示。
+  const fmt = (v) => {
+    if (typeof v === "string") return v;
+    try { return JSON.stringify(v); } catch (_) { return String(v); }
+  };
+  const emit = (level, args) => {
+    if (Play2xiaomi.DEBUG !== false) console[level]("[play2xiaomi]", ...args);
+    if (typeof Play2xiaomi.onLog === "function") {
+      try { Play2xiaomi.onLog(level, args.map(fmt).join(" ")); } catch (_) { /* 日志本身不许抛 */ }
+    }
+  };
+  const log = (...a) => emit("info", a);
+  const warn = (...a) => emit("warn", a);
 
   /* ------------------------------------------------------------------ 常量 */
 
@@ -153,12 +164,21 @@
     return requestJson(`${ACCOUNT_ORIGIN}/pass/serviceLogin?sid=${sid}&_json=true`);
   }
 
-  /** 生成扫码阶段参数：{ qr, loginUrl, lp }（qr 为官方二维码图片地址，可能为空） */
+  /**
+   * 生成扫码阶段参数：{ qr, loginUrl, lp }（qr 为官方二维码图片地址，可能为空）。
+   *
+   * 注意：不是直接请求 serviceLogin 给的 location，而是把 location 的 query 当作参数，
+   * 请求固定的 longPolling/loginUrl（对照 cli/mi_auth.py 的 qr_login；直接请求 location
+   * 会得到"Callback连接不合法"）。
+   */
   async function buildQrStage(notLoggedInResp) {
-    const loc = new URL(notLoggedInResp.location);
-    loc.searchParams.set("_qrsize", "240");
-    loc.searchParams.set("_dc", String(Date.now()));
-    const login = await requestJson(loc.href, { timeout: 30000 });
+    const params = new URL(notLoggedInResp.location, ACCOUNT_ORIGIN).searchParams;
+    params.set("_qrsize", "240");
+    params.set("_dc", String(Date.now()));
+    const login = await requestJson(
+      `${ACCOUNT_ORIGIN}/longPolling/loginUrl?${params}`, { timeout: 30000 });
+    log("buildQrStage: 已取到扫码参数（qr=" + (login.qr ? "有" : "无")
+      + "，loginUrl=" + (login.loginUrl ? "有" : "无") + "，lp=" + (login.lp ? "有" : "无") + "）");
     return { qr: login.qr || "", loginUrl: login.loginUrl || "", lp: login.lp };
   }
 

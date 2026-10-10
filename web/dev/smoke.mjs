@@ -97,4 +97,39 @@ assert.deepEqual(C.stripXiaomi('&&&START&&&{"code":0}'), { code: 0 });
 assert.equal(C.rand(16).length, 16);
 assert.ok(new Set(C.rand(30).split("")).size === 30, "rand 不放回抽样");
 
-console.log("✅ smoke 全部通过：device_list URL / play_url fallback / ubus 载荷 / stripXiaomi·rand");
+/* ------------- 3. 扫码登录：必须请求 longPolling/loginUrl（回归防护） -------------
+ * 历史 bug：直接把 serviceLogin 返回的 location 当接口请求，服务端报
+ * "Callback连接不合法"。正确做法是取 location 的 query 作为参数，请求固定
+ * 的 /longPolling/loginUrl（对照 cli/mi_auth.py）。
+ */
+globalThis.document = { cookie: "" }; // qrLogin 里 ensureDeviceId 会读写 document.cookie
+C._fetchImpl = async (url) => {
+  const u = String(url);
+  calls.push({ url: u });
+  let body;
+  if (u.includes("/pass/serviceLogin")) {
+    body = { code: 1, location:
+      "https://account.xiaomi.com/fe/serviceLogin?qs=%3Fsid%3Dmijia%26_json%3Dtrue"
+      + "&sid=mijia&callback=https%3A%2F%2Fsts.api.io.mi.com%2Fsts&_json=true" };
+  } else if (u.includes("/longPolling/loginUrl")) {
+    body = { qr: "https://account.xiaomi.com/qr/x.png",
+      loginUrl: "https://account.xiaomi.com/QR/abc",
+      lp: "https://account.xiaomi.com/longPolling/lp/xyz" };
+  } else if (u.includes("/longPolling/lp/")) {
+    body = { code: 0, userId: "12345", location: "https://account.xiaomi.com/cb?done=1" };
+  } else { body = {}; }
+  return { ok: true, status: 200, text: async () => JSON.stringify(body) };
+};
+calls = [];
+let qrStage = null;
+const login = await C.qrLogin({ onQr: (s) => (qrStage = s) });
+assert.equal(login.mode, "scanned");
+assert.match(calls[0].url, /\/pass\/serviceLogin/);
+assert.match(calls[1].url, /^https:\/\/account\.xiaomi\.com\/longPolling\/loginUrl\?/,
+  "步骤 2 应请求 longPolling/loginUrl，而不是 location 本身");
+assert.match(calls[1].url, /sid=mijia/);
+assert.match(calls[1].url, /_qrsize=240/);
+assert.ok(qrStage && qrStage.qr && qrStage.lp);
+assert.ok(calls.some((c) => /\/longPolling\/lp\//.test(c.url)), "扫码后应长轮询 lp");
+
+console.log("✅ smoke 全部通过：device_list / play_url fallback / ubus 载荷 / QR 端点 / stripXiaomi·rand");
