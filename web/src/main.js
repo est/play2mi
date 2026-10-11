@@ -279,11 +279,17 @@ body.p2x-page{margin:0;background:#fff;color:#1f2329;
         forced === "mina" ? setupMina(root) : setupAccount();
         return;
       }
-      if (location.origin === C.ACCOUNT_ORIGIN) {
+      const host = location.hostname;
+      // 放宽判定：域名后缀匹配即可（不要求 origin 完全相等），避免在 account/mina 子域上误弹 confirm
+      const isAccount = location.origin === C.ACCOUNT_ORIGIN || /(^|\.)account\.xiaomi\.com$/.test(host);
+      const isMina = host === C.MINA_HOST || /(^|\.)mina\.mi\.com$/.test(host);
+      log("init: host=" + host + " origin=" + location.origin +
+          " → account=" + isAccount + " mina=" + isMina);
+      if (isAccount) {
         log("init: 命中 account 域分支");
         injectShell();
         setupAccount();
-      } else if (location.host === C.MINA_HOST) {
+      } else if (isMina) {
         log("init: 命中 mina 域分支");
         setupMina(injectShell());
       } else {
