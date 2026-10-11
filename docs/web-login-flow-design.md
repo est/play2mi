@@ -18,7 +18,7 @@
 
 ## 2. 新流程全图（Playwright 真机抓包）
 
-两个执行环境（都是书签注入 `p2m.js` 后由 `main.js` 按域名分派）：
+两个执行环境（都是书签注入 `init.js` 后由 `main.js` 按域名分派）：
 
 | 环境 | 域名 | 分支 | 面板 |
 |---|---|---|---|
@@ -27,13 +27,13 @@
 
 ```
 [控制台页] api2.mina.mi.com
- 0. 注入 p2m.js                      → main.js 命中 mina 域 → 建面板 → probe
+ 0. 注入 init.js                      → main.js 命中 mina 域 → 建面板 → probe
     GET /admin/v2/device_list         → 401（未登录）→ 切到「需要登录」视图
     点「🔐 去扫码登录」→ window.open 打开 LOGIN_PAGE
       = account.xiaomi.com/pass/serviceLogin?sid=micoapi&_json=true（不会自动跳转，见 §3.8）
 
 [登录页] account.xiaomi.com
- 1. 注入 p2m.js                      → main.js 命中 account 域 → setupAccount → runLogin
+ 1. 注入 init.js                      → main.js 命中 account 域 → setupAccount → runLogin
  2. GET /pass/serviceLogin?sid=mijia&_json=true               → 200（code≠0 + location）
  3. GET /longPolling/loginUrl?…（取 location 的 query 当参数） → 200（qr / loginUrl / lp）
     渲染官方二维码（qr 图；缺图则用 qrserver 按 loginUrl 现场渲染）
@@ -55,7 +55,7 @@
 
 ## 3. 关键设计点（每条都对应一个硬约束）
 
-1. **同源执行模型**：书签是 `javascript:import('<host>/p2m.js?t='+Date.now())`，在**目标域自身的页面**里执行，
+1. **同源执行模型**：书签是 `javascript:import('<host>/init.js?t='+Date.now())`，在**目标域自身的页面**里执行，
    所以对 `account.xiaomi.com` / `api2.mina.mi.com` 的请求都是同源，没有 CORS 读写障碍。
 2. **无 token 中继 / 无服务器**：`passToken` 是 `.account.xiaomi.com` 的 `HttpOnly`，JS 读不到也写不了；
    `serviceToken` 由跳转链的 `Set-Cookie` 落到 `.mina.mi.com`。全流程只依赖浏览器原生 Cookie，不落地任何票据。
@@ -122,9 +122,9 @@
 干净浏览器上下文（无任何票）→ 强制走扫码，结果：
 
 ```
-步骤 0  console 页注入 p2m.js → login 视图            device_list 401
+步骤 0  console 页注入 init.js → login 视图            device_list 401
 步骤 1  点「去扫码登录」→ account.xiaomi.com          /fe/service/login?sid=micoapi…
-步骤 2  account 页注入 p2m.js → serviceLogin(mijia)   200
+步骤 2  account 页注入 init.js → serviceLogin(mijia)   200
 步骤 3  longPolling/loginUrl                          200（qr/loginUrl/lp 都有）
 步骤 4  扫码（~19s）→ ak.lp.account.xiaomi.com/lp/s   200（userId/passToken/ssecurity/nonce）
 步骤 5  sts.api.mijia.tech/mijia/sts（<img> 回调）    200
@@ -134,7 +134,7 @@
 ```
 
 补充：`node dev/smoke.mjs` 覆盖了 QR 端点回归与 `stripXiaomi` 大整数回归；
-线上托管产物 `p2m.js` 已含 `fc33fd6` 的后缀匹配改动。
+线上托管产物 `init.js` 已含 `fc33fd6` 的后缀匹配改动。
 
 ---
 

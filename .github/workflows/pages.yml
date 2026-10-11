@@ -1,9 +1,9 @@
 # play2mi · 书签版自动构建并部署到 GitHub Pages
 #
 # dist/ 不入库（见 .gitignore），所以用 Actions 现场构建：
-#   node build.js        （拼接 p2m.js + 拷贝自包含的 index.html）
+#   node build.js        （拼接 init.js + 拷贝自包含的 index.html）
 #   node dev/smoke.mjs   （零网络冒烟，保证没退化）
-# 然后把 web/dist 作为 Pages 站点根发布——因此 p2m.js 的访问路径是 /<repo>/p2m.js。
+# 然后把 web/dist 作为 Pages 站点根发布——因此 init.js 的访问路径是 /<repo>/init.js。
 #
 # 使用：仓库 Settings → Pages → Source 选 "GitHub Actions"，本工作流即自动接管。
 name: pages
