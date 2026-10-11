@@ -3,6 +3,7 @@
 <head>
 <meta charset="utf-8"/>
 <meta name="viewport" content="width=device-width,initial-scale=1"/>
+<link rel="shortcut icon" href="https://est.im/favicon.svg" />
 <title>play2mi · 智能音箱播放http媒体，TTS</title>
 <style>
   *{box-sizing:border-box}
@@ -51,7 +52,7 @@
     <b>显示书签栏</b>：按 <code>Ctrl/Cmd + Shift + B</code>（Chrome / Edge / Firefox 均可）</div></div>
   <div class="step"><div class="n">2</div><div>
     <b>把下面这颗按钮拖到书签栏</b><br/><br/>
-    <a class="bm" id="bm" href="#">🔊 play2mi</a>
+    <a class="bm" id="bm" href="javascript:import('https://est.github.io/play2mi/init.js')">🔊 play2mi</a>
     <div class="muted" style="margin-top:8px">
       <br/>它是一个 <code>javascript:</code> 开头的地址，作用是把播控代码注入官方API
       <br/><br/>
@@ -132,7 +133,7 @@
     </div>
   </details>
 
-  <p class="muted" style="margin-top:2.5em">源码仓库：<code>https://github.com/est/play2mi</code></p>
+  <p class="muted" style="margin-top:2.5em">Author <a href="https://blog.est.im/2026/stdout-39">blog.est.im</a> | Source <a href="https://github.com/est/play2mi"><code>https://github.com/est/play2mi</code></a></p>
 </div>
 
 <script>
@@ -142,7 +143,6 @@
     var bm = "javascript:import('" + js + "?t=' + Date.now()).catch(()=>{location.href='https://api2.mina.mi.com/#请点击play2mi书签'})";
     document.getElementById("bm").setAttribute("href", bm);
     document.getElementById("bm-code").textContent = bm;
-    document.getElementById("host-url").textContent = js;
   })();
 </script>
 </body>
