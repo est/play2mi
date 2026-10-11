@@ -101,17 +101,21 @@ assert.equal(bigNonce.nonce, "2818502318476480512");
   mina cookies: serviceToken,userId,micoapi_slh,micoapi_ph
   device_list = 200 {"code":0,"message":"Success","data":[{"deviceID":"863ff3af-…",…}]}
   ```
-  → **纯前端浏览器登录成功。**
+- **完整单页端到端（真扫码，干净浏览器上下文）**：
+  `account 域 loginMina → 扫码 → 清 pass_ua → serviceLogin(micoapi) → clientSign → 顶层导航 /sts`
+  → 落 `.mina.mi.com` 的 `serviceToken/userId/micoapi_slh/micoapi_ph` → `device_list = 200`。
+  → **纯前端浏览器登录成功（不需要两段式/服务器）。**
 
 ---
 
-## 6. 次要观察与未决项
+## 6. 其他已验证的硬约束（决定实现）
 
-1. **`pass_ua=web` 与 `nonce` 缺失**：报告旧观察（带 `pass_ua=web` 请求 `serviceLogin(micoapi)` 时不返回 `nonce`）在早期实验中成立。`pass_ua` 是 `.account.xiaomi.com` 域 cookie，**从 mina 落地页用 `document.cookie` 删不掉**（跨域）。
-   - 若它在"最早的单页设计"里仍存在，则需：
-     - 方案一（兜底）：两段式——第一段在 **account 域**清 `pass_ua` + 换票 + 算 `clientSign`，用 `location.href` 带签名 URL 跳到 mina；第二段在 **mina 域**同源 `fetch /sts`。此路径**已验证可用**。
-     - 方案二（优先验证）：直接看单页设计（全部在 mina 落地页）在修好 nonce 后是否本就跑得通——因为旧结论都被 nonce bug 污染过，`pass_ua` 的真实影响需要重测。
-2. 服务端对高频 `serviceLogin`/`/sts` 有**限流/冷却**：短时间内大量请求会返回 `70016`（连有效票也拒），冷却后恢复。排查时注意节流。
+1. **`pass_ua=web` 会让 `serviceLogin(micoapi)` 不返回 `nonce/ssecurity`**（无 App 形）。必须在 **account 域内**用 `document.cookie` 清掉 `pass_ua` 等链路 cookie，才拿得到 nonce。
+2. **`/sts` 必须用【顶层导航】落 cookie**：登录页在 `account.xiaomi.com`，而 `/sts` 在 `api2.mina.mi.com`，跨域 `fetch` 会被 CORS 拦（`net::ERR_FAILED`，cookie 也不落），`<img>` 也不行；只有 `location.assign(stsUrl)` 让浏览器原生跟随，`Set-Cookie` 才会落到 `.mina.mi.com`。
+3. nonce 是 >2^53 大整数（§3）。
+4. 服务端对高频 `serviceLogin`/`/sts` 有限流：短时间内大量请求会 `70016`（连有效票也拒），冷却后恢复。
+
+**最终单页设计**（已验证端到端）：登录页在 `account.xiaomi.com` → 扫码 → 清 `pass_ua` → `serviceLogin(micoapi)` → 大整数安全解析 → 正确 `clientSign` → **顶层导航** `/sts` → `serviceToken` 落 `.mina.mi.com` → 控制台页切回时自动 `probe()`（`main.js` 的 focus 兜底）。全程单页、无两段式、无服务器。
 
 ---
 

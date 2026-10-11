@@ -95,6 +95,29 @@
     return m ? decodeURIComponent(m[1]) : "";
   }
 
+  /**
+   * 清掉会把会话钉成"web 形"的链路 cookie。
+   * 只有请求里不带 pass_ua 时，serviceLogin(micoapi) 才会返回 nonce/ssecurity（App 形），
+   * 否则算不出 clientSign。必须在 account.xiaomi.com 域内执行才有效（document.cookie 只能写当前域）。
+   */
+  function clearWebLinkCookies() {
+    if (typeof document === "undefined") return;
+    for (const n of ["pass_ua", "passInfo", "cUserId", "uLocale", "theme"]) {
+      for (const dom of ["", "; domain=.account.xiaomi.com", "; domain=.xiaomi.com"]) {
+        document.cookie = `${n}=; expires=Thu, 01 Jan 1970 00:00:00 GMT; path=/${dom}`;
+      }
+    }
+  }
+
+  /** 顶层导航：跨域落 cookie 必须用它（跨域 fetch 会被 CORS 拦、cookie 也落不了） */
+  function navigate(url) {
+    if (typeof location !== "undefined" && typeof location.assign === "function") {
+      location.assign(url);
+    } else {
+      warn("navigate: 非 DOM 环境，跳过顶层导航");
+    }
+  }
+
   /** SHA-1 + base64：exchange sid 的 clientSign 用（SubtleCrypto） */
   async function sha1B64(text) {
     const digest = await crypto.subtle.digest("SHA-1", new TextEncoder().encode(text));
@@ -259,22 +282,33 @@
   }
 
   /**
-   * 免密换票：把浏览器里已有的有效凭证换成 sid=micoapi 的 serviceToken。
-   * 票本身由跳转链写进 .mina.mi.com Cookie（浏览器自动携带），这里不取值。
+   * 免密换票：把 account 域的有效凭证换成 sid=micoapi 的 serviceToken。
+   *
+   * 实测关键点（务必保留）：
+   *  1) 请求带 pass_ua=web 时 serviceLogin 不返回 nonce/ssecurity（无 App 形）→ 先清 web 链路 cookie；
+   *  2) nonce 是 >2^53 的大整数（stripXiaomi 已保成字符串），否则 clientSign 必错；
+   *  3) 最后 /sts 在 api2.mina.mi.com，跨域 fetch 会被 CORS 拦（读不到、也不落 cookie），
+   *     必须用顶层导航让浏览器原生跟随 —— 所以本函数不返回，页面会跳到 /sts。
+   * 命中后 serviceToken 落在 .mina.mi.com，控制台切回本页即可用（main.js 的 focus 兜底会 probe）。
    */
   async function exchangeMicoapi() {
     ensureDeviceId();
     setCookie("sdkVersion", "3.9", 365);
+    clearWebLinkCookies();
     log("exchangeMicoapi: 开始换取 sid=micoapi 票");
     const r = await serviceLogin("micoapi");
     if (r.code !== 0 || !r.location) {
       throw new ApiError(`micoapi 换票失败 code=${r.code} ${r.description || ""}`, "api", r.code);
     }
+    if (!r.nonce || !r.ssecurity) {
+      throw new ApiError("micoapi 未返回 nonce/ssecurity（仍处 web 会话？pass_ua 没清掉）", "api", r.code);
+    }
     const nsec = `nonce=${r.nonce}&${r.ssecurity}`;
     const sign = await sha1B64(nsec);
-    await request(r.location + "&clientSign=" + encodeURIComponent(sign), { timeout: 30000 });
-    log("exchangeMicoapi: 完成（.mina.mi.com 票据就绪）");
-    return { ok: true };
+    const url = r.location + "&clientSign=" + encodeURIComponent(sign);
+    log("exchangeMicoapi: 顶层导航到 /sts 落 serviceToken（跨域 fetch 会被 CORS 拦）");
+    navigate(url);
+    return { ok: true, navigated: true, url };
   }
 
   /**
