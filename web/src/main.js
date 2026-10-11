@@ -242,7 +242,8 @@ body.p2x-page{margin:0;background:#fff;color:#1f2329;
     load: '[data-load=""]', playing: '[data-playing=""]', msg: '[data-msg=""]',
     device: "select[data-device]", url: '[data-url=""]', tts: '[data-tts=""]',
     vol: '[data-vol=""]', volv: '[data-volv=""]', raw: '[data-raw=""]',
-    rawBody: '[data-rawbody=""]', log: '[data-log=""]',
+    // 注意 dataset 会把 camelCase 键转成 kebab-case 属性：data.rawBody → data-raw-body
+    rawBody: '[data-raw-body=""]', log: '[data-log=""]',
   };
 
   /** 创建一个可切换的视图容器 */
@@ -266,8 +267,9 @@ body.p2x-page{margin:0;background:#fff;color:#1f2329;
 
   function showRaw(obj) {
     const det = $(q.raw);
-    det.hidden = !obj;
-    $(q.rawBody).textContent = obj ? JSON.stringify(obj, null, 2) : "";
+    const body = $(q.rawBody);
+    if (det) det.hidden = !obj;
+    if (body) body.textContent = obj ? JSON.stringify(obj, null, 2) : "";
   }
 
   function loadData(name) { return $(`[data-${name}=""]`)?.value; }

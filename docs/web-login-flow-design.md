@@ -144,8 +144,12 @@
 - **二维码时效**：二维码生成后需尽快扫；拖太久会过期，长轮询会一直等到超时才重挂（5 次约 12 分钟）。
 - **后台标签计时器节流**：登录页若失焦，`AbortSignal.timeout` 可能被节流不触发；端到端脚本里已用
   `--disable-background-timer-throttling` 规避（仅测试脚本需要，正式书签环境无此问题）。
-- **`refreshStatus` 空指针（本次 e2e 发现，已修）**：登录完成、面板重绘后状态节点可能取不到，
-  旧代码直接 `node.textContent = …` 会抛 `Cannot set properties of null`。已在 `main.js` 加 `if (!node) return;` 兜底。
+- **`showRaw` 选择器大小写 bug（本次 e2e 发现，已修）**：`data: { rawBody: "" }` 经 `dataset` 会落成属性
+  `data-raw-body`（camelCase→kebab-case），而 `q.rawBody` 选择器写成了 `[data-rawbody=""]`（全小写无连字符），
+  **永远匹配不到** → 每次 `showRaw()`（TTS 下发成功、读状态成功）都抛
+  `Cannot set properties of null (setting 'textContent')`，被 `act` / `refreshStatus` 的 `catch` 记成“失败”。
+  已把选择器改为 `[data-raw-body=""]`，并给 `showRaw` 加了空值兜底。
+  （教训：`el()` 的 `data:{...}` 会走 `dataset`，camelCase 键对应的属性是 kebab-case。）
 - **「已登录但 mina 无票」场景**：浏览器有 `passToken` 但 `.mina.mi.com` 没 `serviceToken` 时，`device_list` 仍 401；
   此时走登录页会命中 `qrLogin` 的 `already` 分支（`serviceLogin(mijia)` 返回 `code=0`），**免扫码**直接换票。
   旧落地页在这个场景会瞬间跳 `/sts` 导致用户点不到书签，现已用 `&_json=true` 修掉。
