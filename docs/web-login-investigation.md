@@ -1,120 +1,135 @@
 # 小爱云（mina）浏览器侧登录调研报告
 
-日期：2026-10-11　范围：`web/src`（书签版）登录链路　依据：本仓库 `docs/`、`cli/mi_auth.py`、本日 14 组真机实验（Playwright 驾驶 Microsoft Edge v1.4x，无任何中间层）
+日期：2026-10-11　范围：`web/src`（书签版）登录链路　依据：本仓库 `docs/`、`cli/mi_auth.py`、本日多轮真机实验（Playwright 驾驶 Microsoft Edge，无中间层）
+
+> 2026-10-11 深夜 **重大勘误**：本报告旧版的"票的类别 / User-Agent"结论**错误**。真正根因是 **JavaScript 大整数精度丢失**（见 §3）。已修复并在真浏览器验证通过（§5）。
 
 ---
 
 ## 1. 一句话结论
 
-**卡死点只有一个：`api2.mina.mi.com/sts` 只认"App 形票"（响应里带 `nonce/ssecurity`、再用 `clientSign` 签名的那个）。
-浏览器书签链路拿到的是"Web 形票"（响应里没有 `nonce/ssecurity`），打 `/sts` 恒定 401，`serviceToken` 永远落不到 `.mina.mi.com`。**
-票的"形状"由**发起扫码登录那次请求的 User-Agent** 决定：MiHome/… → App 形；浏览器 UA → Web 形。
-已验证：即便把 UA、票据、请求头全部扮成 App 客户端 / 或者清除 `pass_ua` 让响应短暂回到 App 形，小米在这条会话上的 **passToken 依旧被服务端绑成 Web 类**，`/sts` 依旧 401（§7 H1 全套实测）。
-**→ 纯浏览器不可行。** 可行路径只剩：CLI 发票（本报告 §8，实测 `device_list code:0 devices:2`）或桌面端登录进程。
+**卡死点只有一个：`account.xiaomi.com/pass/serviceLogin` 返回的 `nonce` 是 19 位大整数（> `Number.MAX_SAFE_INTEGER` ≈ 9e15），JS 的 `JSON.parse` 会把它解析成丢精度的 `Number`，导致 `clientSign = base64(sha1("nonce=" + 错值 + "&" + ssecurity))` 签错，`api2.mina.mi.com/sts` 恒定 401。**
+
+- Python（任意精度整数）→ 每次都对 → CLI 必成；
+- JS（`Number` 双精度）→ 每次都错 → 浏览器/node/任何 JS 必败。
+
+**这与 User-Agent、票"形状"、`pass_ua`、`Connection`、HTTP/1.1 vs 2、CORS、TLS 指纹全都无关**（这些是排查过程中被限流和"一次性 auth"污染出来的假象，见 §7 勘误）。
 
 ---
 
-## 2. 小米链路背景（我们到底在换什么）
+## 2. 链路背景（我们到底在换什么）
 
 ```
 ① serviceLogin?sid=mijia&_json=true  →  code≠0 + location(router URL)
-② GET {location} & _qrsize=240&_dc=…  →  { qr, loginUrl, lp }   ← ② 就是楼下的 /longPolling/loginUrl
-③ 用户用【米家 APP】扫码 → GET {lp}（长轮询）          →  { userId, passToken, ssecurity, nonce, deviceId… }
-④ GET {lp.location}                                  →  （落 .account 域的 passToken 等）
-⑤ serviceLogin?sid=micoapi&_json=true                →  code=0 + location(/sts?) 
+② GET {location} & _qrsize=240&_dc=…  →  { qr, loginUrl, lp }
+③ 用户用【米家 APP】扫码 → GET {lp}（长轮询）  →  { userId, passToken, ssecurity, nonce… }
+④ GET {lp.location}                    →  （回调落 cookie，mijia 域）
+⑤ serviceLogin?sid=micoapi&_json=true  →  code=0 + nonce + ssecurity + location(/sts?)
 ⑥ GET {location}&clientSign=base64(sha1("nonce={n}&{ssecurity}"))
-                                                     →  Set-Cookie serviceToken on .mina.mi.com ✓
+                                        →  Set-Cookie serviceToken on .mina.mi.com ✓
 ```
 
+**要点：`/sts` 的 `auth`/`location` 是一次性的**——同一个 URL 兑换成功后，再兑换必然 401。排查时务必每次重新 `serviceLogin` 取新 location，否则会把"一次性"误判成"指纹/风控"。
 
 ---
 
-## 3. 成功链路（Python CLI）—— 逐请求实测（本日 23:36 抓包）
+## 3. 根因证据（逐步重放定位）
 
-请求头：`User-Agent: MiHome/6.0.103 (com.xiaomi.mihome; build:6.0.103.1; iOS 14.4.0) Alamofire/6.0.103 MICO/iOSApp/appStore/6.0.103`
-请求头：`Cookie: deviceId=27NHZYTPZFQO8EYV; userId=265010269; passToken=V1:DX…; sdkVersion=3.9;`　← **只有这 4 件**
+以 CLI 为基准，给每个 `HTTPSConnection.send` 打原始字节，并**实时**用 node 重放同一请求对比（`cli_live.py` + `replay_one.mjs`）：
 
-| # | URL | 响应要点 |
+```
+[STEP] GET /pass/serviceLogin?sid=micoapi   node=200   CLI=200
+[STEP] GET /sts?…                           node=200 token   CLI=401   ← DIVERGENCE
+```
+
+因为 node 是**先发**的：node 能兑换（200），CLI 反而 401 —— 直接暴露两个事实：
+1. `/sts` 一次性（谁先兑换谁赢）；
+2. **node 能拿 `/sts`，只要那张 `auth` 是"正确的签名"**。
+
+进一步 2×2 隔离（谁签发/谁兑换，交替跑 6 次，排除顺序）：
+
+| 签发 | 兑换 | 结果 |
 |---|---|---|
-| ① | `account.xiaomi.com/pass/serviceLogin?sid=micoapi&_json=true` | `code=0`，**`nonce=42614257`（有）**，`ssecurity=101+2NMowtg2（有）`，`location=https://api2.mina.mi.com/sts?d=27NHZY…&ticket=0&…&auth=…` |
-| ② | `{location}&clientSign=base64(sha1("nonce=…&ssecurity"))` | **HTTP/2 200**；`set-cookie: serviceToken=sXE…； userId=…; domain=.mi.com； micoapi_slh=…; domain=.mi.com； micoapi_ph=…; domain=.mina.mi.com`，body `{"R":"","S":"OK"}` |
+| Python | node | **200 token ✓** |
+| Python | Python | 200 |
+| node | node | **401** |
+| node | Python | **401**（连 Python 都救不了 node 签发的 auth） |
 
-→ **`.mina.mi.com` 拿到 `serviceToken`，`device_list` 即可用。**
-注：① 的响应头也会带 `Set-Cookie: pass_ua=web` 返回（服务器总是 sich）。**关键在请求里是否带 pass_ua**（见 §4）。
+→ 问题**百分之百在 `serviceLogin` 那一步的 JS 解析**。直接对拍：
 
----
+```
+raw nonce     = 2818502318476480512
+JS JSON.parse = 2818502318476480500     ← 丢了精度（不相等）
 
-## 4. 失败链路（浏览器书签）—— 逐请求实测（diag7 / diag12 真机）
+用【原始字符串 nonce】签名  → /sts = 200 token ✓
+用【JSON.parse Number nonce】签名 → /sts = 401
+```
 
-请求前 Cookie jar：`deviceId=QZ7M4Kc8RyXVwaT2`（我们自己预置的 App 形，**小米没改写**）、`passToken(H)`、`userId`、`cUserId`、`pass_ua=web`、`passInfo=login-end`、`ptn_count(H)`、`uLocale`、`theme`、`sdkVersion`。UA = Chromium 默认。
-
-| # | URL | 结果 |
-|---|---|---|
-| ① | `serviceLogin?sid=mijia&_json=true` | 200，`code=70016`（=需要扫码，正常），给 location |
-| ② | `longPolling/loginUrl?…&sid=mijia…` | 200，`qr` / `loginUrl` / `lp` 全有 |
-| ③ | 米家 APP 扫码 → `GET {lp}` 长轮询 | 200，**返回 `userId/passToken/ssecurity/nonce/cUserId`** |
-| ④ | `GET {lp.location}`（=`sts.api.mijia.tech/mijia/sts?d=QZ7M4Kc8RyXVwaT2&…auth=…`） | `<img>` 触发 → **HTTP 200**（此路径小米是放行的；它的 Cookie 落在 `.mijia.tech` 域，我们用不到） |
-| ⑤ | `serviceLogin?sid=micoapi&_json=true` | 200，**`code=0` 但 `nonce=无 / ssecurity=无`**，`location` 直接是 `/sts?d=…&auth=…` |
-| ⑥ | `GET {location}`（fetch / `<img>` / curl 全试过） | **HTTP 401**，`.mina.mi.com` 一个 cookie 都没落；`device_list` 仍旧 401 |
+**实锤。**
 
 ---
 
-## 5. 差异逐条对照（带证据编号）
+## 4. 修复
 
-| 差异点 | Python 成功链 | 浏览器失败链 | 证据 |
-|---|---|---|---|
-| **D1. User-Agent** | `MiHome/6.0.103 (…MICO/iOSApp…)` | Chromium 默认（Edge/…) | diag10→70016、diag13（MiHome UA + 浏览器 jar）见 §7 |
-| **D2. 请求是否带 `pass_ua=web`** | **不带**（显式 Cookie 只有 4 件） | 带（登录链自动加入，无法用 fetch 摘除） | 本报告 §3 步① vs §5 diag9 |
-| **D3. ①响应形状** | `code=0 + nonce + ssecurity + location(/sts?)` | `code=0 + (无 nonce/ssecurity) + location(/sts)` | 本报告 §3 vs diag9/diag8 |
-| **D4. 是否要带 `clientSign`** | ⑤⑥ 必带（sha1(nonce&ssecurity)） | 因 ① 无 nonce → **算不出来** | mi_auth.py:215-217 vs diag9 |
-| **D5. Cookie 里的"link 形"票** | passToken 与 MINA 无绑定关系（四件套即可复用） | passToken 与 `pass_ua=web` 绑定：删 pass_ua → `code 70016` | diag10 |
-| **D6. passToken 颁发者** | 由 `lp` 回调下发到 CLI 的 json（可直接当 header 用） | 只走 `Set-Cookie`(HttpOnly)，浏览器 JS 读不到 | mi_auth.py:196-202；diag7/10 |
-| **D7. `/sts` 终点** | 接受（200） + 落 `serviceToken` | 401，无 set-cookie | 本报告 §3 步② vs diag13（MiHome UA+全部 jar 仍 401） |
-| **D8. deviceId 形状** | `27NHZYTPZFQO8EYV`（大写随机） | 我们预置 `QZ7M4Kc8RyXVwaT2` 也没被覆盖；**但依旧 401** → 形状**不是**关键 | diag7/diag12 |
+`web/src/core.js` 的 `stripXiaomi`：先把 ≥15 位的整数字面量包裹成字符串再 `JSON.parse`。
 
----
+```js
+function stripXiaomi(text) {
+  const s = String(text).replace("&&&START&&&", "");
+  // nonce 是 >2^53 的大整数，JSON.parse 会丢精度 → clientSign 签错 → /sts 401
+  const safe = s.replace(/:(\d{15,})(?=[,}\]\s]|$)/g, ':"$1"');
+  return JSON.parse(safe);
+}
+```
 
-## 6. 已排除的假设（都试过了，别再绕回）
-
-1. ~~`fetch` 的 CORS 是元凶~~ → diag13 用 curl 直接打 `/sts`（无 CORS）仍 401。CORS 只是**读不到响应**，不是 401 原因。
-2. ~~`deviceId` 带 `wb_` 前缀导致票是"web 票"~~ → 预置 App 形 device（`QZ7M4Kc8RyXVwaT2`、`KK8RyXVwaT2m4QZ7M4`）后走过 `/sts` 仍 401（diag12）。
-3. ~~`pass_ua` 删掉就能走 app 形~~ → 删掉后浏览器侧 `serviceLogin` 反而 `70016`（passToken 被链上其余 cookie 绑死）；diag10。
-4. ~~Cookie 里有 `theme/uLocale/cUserId` 等干扰~~ → CLI 的四件套 + `pass_ua=web` 组合无论怎么排都拿到"无 nonce"形状（本报告 §5 D2/D3）。
-5. ~~`sdkVersion` 缺失导致 70016~~ → 4 件套里包括它仍 70016（diag10/diag14）。
-6. ~~交叉调用（app UA+浏览器票，浏览器 UA+app 票）~~ → app UA + **浏览器票** = `70016`（票与 UA 绑定，diag10）；浏览器 UA + **CLI 票** = 拿到 nonce（diag10 前置实验，等于 CLI 自身成功）。
+回归测试已加入 `web/dev/smoke.mjs`：
+```js
+const bigNonce = C.stripXiaomi('&&&START&&&{"code":0,"nonce":2818502318476480512,"ssecurity":"x"}');
+assert.equal(typeof bigNonce.nonce, "string");
+assert.equal(bigNonce.nonce, "2818502318476480512");
+```
 
 ---
 
-## 7. H1（UA 全程）实测结果 —— 已关闭（2026-10-11 深夜补测）
+## 5. 验证（真机）
 
-做了三件事，每件都有数据：
-
-1. **`fetch` 能否设置 `User-Agent` 头**：✅ 可以（httpbin 回读 = `MiHome/6.0.103…`）。实现层无障碍。
-2. **MiHome UA 全程跑完扫码链**（platform级 `userAgent` 覆盖 → ①②③④ 与 CLI 完全同 UA）：全部成功，但发现的差异是——服务器**仍然**给这条会话发的是 `wb_8dad9641-…`（web 形）deviceId（diag15 日志 `d=wb_…`），**没有**接受我们预置的 App 形（diag12 同样被改写）。
-3. **清掉 web 链路 Cookie（pass_ua 等 6 项）之后**：`serviceLogin(micoapi)` 竟然 **确实返回了 App 形**：`{code:0, nonce:true, ssec:true}`（diag15/diag16），说明"可用形状"的门槛就是那组链路 Cookie。
-4. 但最后一步 `/sts` —— 无论用 `fetch`（CORS 挡读）还是 **顶层导航**（`Sec-Fetch-Mode: navigate`），`.mina.mi.com` 都**一个 Cookie 没落**；再用 **curl + 完整复刻**（MiHome UA / Sec-Fetch / Referer / Origin / 4件套 / +pass_ua / 换 App 形 device）**共 10 种组合全部 401**（diag16/diag17）。
-5. 关键对照：同一时间窗、同一 curl 签名，**CLI 的 passToken** 能打出 200 + `set-cookie serviceToken`（前述 binary 复现），**浏览器链路签发的 passToken**（这个 `wb_…` 会话的）**一律 401**。
-
-**结论：小米在"登录会话落地"的那一刻就决定了这个 passToken 的"客户端类别"，并把它与 `/sts` 的接受名单绑定。浏览器里无论 UA、票据、请求头怎么扮成 App 客户端，都换不到会话的"App 类"。该绑定点在服务端，浏览器无字段可探。**
-
-→ **纯浏览器路径 A 已闭环、不可行。** 不要再在这上面投入。后续依赖：CLI 发票（本报告 §8 的 B）或其它（桌面端 CLI 进程）。
+- `node dev/smoke.mjs` → ✅ 全过（含大整数回归）
+- `node build.js` → ✅ 构建通过
+- **真浏览器（Microsoft Edge，默认 HTTP/2，无需扫码，用 CLI 新鲜票）**：
+  ```
+  serviceLogin → 正确 clientSign → /sts = 200
+  mina cookies: serviceToken,userId,micoapi_slh,micoapi_ph
+  device_list = 200 {"code":0,"message":"Success","data":[{"deviceID":"863ff3af-…",…}]}
+  ```
+  → **纯前端浏览器登录成功。**
 
 ---
 
-## 8. 可行路径总结（给决策）
+## 6. 次要观察与未决项
 
-| 路线 | 描述 | 代价 | 实测可信度 |
-|---|---|---|---|
-| **H1 纯浏览器 + MiHome-UA 全程** | 见 §6/§7；一次扫码实验 | 代码：UA 头注入 + 走 clientSign | **待验证**（若 `fetch` 不可设 UA 头 → 不可行） |
-| **成功/退路：CLI 发票 + 浏览器种 Cookie** | CLI 已生成 `cli/mina_qr_auth.json`（含 `micoapiServiceToken`）。控制台面板一个粘贴框（或拖文件），页面用 `document.cookie` 种 `userId(.mi.com)+serviceToken(.mina.mi.com)` | 一次粘贴；无服务器；Cookie 2 个月 | ✅ **已实测**（diag6：`device_list code:0, devices=2`） |
-| 维持 CLI 版 | 不做 web | — | ✅ |
+1. **`pass_ua=web` 与 `nonce` 缺失**：报告旧观察（带 `pass_ua=web` 请求 `serviceLogin(micoapi)` 时不返回 `nonce`）在早期实验中成立。`pass_ua` 是 `.account.xiaomi.com` 域 cookie，**从 mina 落地页用 `document.cookie` 删不掉**（跨域）。
+   - 若它在"最早的单页设计"里仍存在，则需：
+     - 方案一（兜底）：两段式——第一段在 **account 域**清 `pass_ua` + 换票 + 算 `clientSign`，用 `location.href` 带签名 URL 跳到 mina；第二段在 **mina 域**同源 `fetch /sts`。此路径**已验证可用**。
+     - 方案二（优先验证）：直接看单页设计（全部在 mina 落地页）在修好 nonce 后是否本就跑得通——因为旧结论都被 nonce bug 污染过，`pass_ua` 的真实影响需要重测。
+2. 服务端对高频 `serviceLogin`/`/sts` 有**限流/冷却**：短时间内大量请求会返回 `70016`（连有效票也拒），冷却后恢复。排查时注意节流。
 
 ---
 
-## 9. 附：本轮相关的代码/实验文件位置
+## 7. 勘误：旧版报告的错误结论（已作废）
 
-- 真机实验脚本一律在沙盒目录（opencode 临时目录）`…/opencode/edge-cloned/diag*.mjs`——**没有**进仓库，读完报告可删。
-- 仓库里的代码已回退/校正到"手动 clientSign 流程"，包含两处**和这份结论一致**的修正：
-  - `core.js`：`lp.location` 换成 `<img>` 触发 + 失败不中断（diag3 失败根因）；
-  - `credentials: "include"`（跨域 Set-Cookie 必须带）。
-- `web/dev/smoke.mjs` 保留了"step2 必须打 `/longPolling/loginUrl`"的回归断言。
+| 旧结论 | 实际 |
+|---|---|
+| 票分"App 形 / Web 形"，`/sts` 只认 App 形 | 票无此区分；`/sts` 只认签名，签名错就 401 |
+| 形状由发请求的 User-Agent 决定 | 与 UA 无关 |
+| 浏览器拿不到 App 形票 | 浏览器能拿到；JS 只是把 `nonce` 算错了 |
+| `/sts` 恒定 401 是像素级身份绑定 | 是 `clientSign` 里 `nonce` 精度丢失 |
+
+排查中出现的"改任意 header 就 401 / TLS 指纹 / Connection: close / http2"等结论，均为 **`/sts` 一次性 + 服务端限流**造成的假象，不成立。
+
+---
+
+## 8. 复现/环境注意
+
+- 本机 shell 里存在 `https_proxy=https://`（机房 IP）。**Python `urllib` 会走它并 `RemoteDisconnected`；node/浏览器不走**。跑 CLI 时请 `env -u https_proxy -u http_proxy …`。
+- passToken **每次登录轮换**（前缀相同、后缀不同）；旧票会 `70016`，别拿旧票对比。
+- 实验脚本（`cli_live.py` / `replay_one.mjs` / `fix_test.mjs` / `browser_verify_fix.mjs` 等）在 opencode 沙盒目录，未入库。
