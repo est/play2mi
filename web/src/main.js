@@ -109,7 +109,6 @@ body.p2x-page{margin:0;background:#fff;color:#1f2329;
   color:inherit;border-radius:9px;padding:8px 10px;font:inherit;width:100%}
 .p2x-status{color:#6b7280;min-height:18px;font-size:13px;word-break:break-all}
 .p2x-status.err{color:#d23b3b}
-.p2x-playing{color:#1a7f37;font-weight:600}
 .p2x-view{display:none}.p2x-view.on{display:block}
 .p2x-note{color:#8b93a1;font-size:12px}
 .p2x-qr{background:#f8f9fb;border:1px solid #eceef2;border-radius:12px;padding:12px;
@@ -187,7 +186,6 @@ body.p2x-page{margin:0;background:#fff;color:#1f2329;
             el("select", { className: "p2x-select", data: { device: "" },
               on: { change: (e) => { state.selected = e.target.value; state.pauseSupported = undefined; localStorage.setItem(KEY_DEVICE, state.selected); refreshStatus(); } } }),
             el("button", { className: "p2x-btn", title: "刷新设备列表", data: { act: "devs" } }, "⟳")),
-          el("div", { className: "p2x-status", data: { playing: "" } }),
           el("div", { className: "p2x-row" },
             el("input", { className: "p2x-input", data: { url: "" },
               placeholder: "http(s):// 音频地址", spellcheck: "false",
@@ -237,7 +235,7 @@ body.p2x-page{margin:0;background:#fff;color:#1f2329;
 
   const q = {
     view: (n) => `.p2x-view[data-view-name="${n}"]`,
-    load: '[data-load=""]', playing: '[data-playing=""]', msg: '[data-msg=""]',
+    load: '[data-load=""]', msg: '[data-msg=""]',
     device: "select[data-device]", url: '[data-url=""]', tts: '[data-tts=""]',
     vol: '[data-vol=""]', volv: '[data-volv=""]', raw: '[data-raw=""]',
     // 注意 dataset 会把 camelCase 键转成 kebab-case 属性：data.rawBody → data-raw-body
@@ -414,24 +412,22 @@ body.p2x-page{margin:0;background:#fff;color:#1f2329;
   }
 
   async function refreshStatus() {
-    const node = $(q.playing);
-    // 面板可能已被替换/移除（例如登录页换票导航、重复点书签重绘），此时状态节点会取不到：
-    // 不能直接写 node.textContent，否则会抛 "Cannot set properties of null"。
-    if (!node) { warn("refreshStatus: 状态节点缺失（面板已重绘或移除？），跳过"); return; }
-    if (!state.selected) { node.textContent = ""; return; }
+    if (!state.selected) return;
     log("refreshStatus: device =", state.selected);
     try {
       const resp = await state.mina.getStatus(state.selected);
-      const { text } = friendlyStatus(resp);
-      node.textContent = `当前：${text}`;
-      node.classList.toggle("p2x-playing", /播放中/.test(text));
+      const { text, data } = friendlyStatus(resp);
+      // 不单独做状态 UI：直接打到运行日志（含 data.info 解码后的详情）
+      log("refreshStatus: OK →", data && data.status !== undefined ? text : "（无 data.status，详情见下）");
+      const info = resp?.data?.info;
+      if (typeof info === "string") {
+        try { log("播放详情:\n" + JSON.stringify(JSON.parse(info), null, 2)); }
+        catch (_) { log("播放详情:", info); }
+      }
       showRaw(resp);
-      log("refreshStatus: OK →", text);
     } catch (e) {
-      node.textContent = "状态获取失败（可能票据过期，可重新登录）";
-      node.classList.remove("p2x-playing");
-      if (e?.kind === "api") setView("login");
       warn("refreshStatus: 失败 →", e?.message || e);
+      if (e?.kind === "api") setView("login");
     }
   }
 
