@@ -384,6 +384,9 @@ body.p2x-page{margin:0;background:#fff;color:#1f2329;
 
   async function refreshStatus() {
     const node = $(q.playing);
+    // 面板可能已被替换/移除（例如登录页换票导航、重复点书签重绘），此时状态节点会取不到：
+    // 不能直接写 node.textContent，否则会抛 "Cannot set properties of null"。
+    if (!node) { warn("refreshStatus: 状态节点缺失（面板已重绘或移除？），跳过"); return; }
     if (!state.selected) { node.textContent = ""; return; }
     log("refreshStatus: device =", state.selected);
     try {
