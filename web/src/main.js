@@ -188,19 +188,17 @@ body.p2x-page{margin:0;background:#fff;color:#1f2329;
               on: { change: (e) => { state.selected = e.target.value; state.pauseSupported = undefined; localStorage.setItem(KEY_DEVICE, state.selected); refreshStatus(); } } }),
             el("button", { className: "p2x-btn", title: "刷新设备列表", data: { act: "devs" } }, "⟳")),
           el("div", { className: "p2x-status", data: { playing: "" } }),
-          el("div", null,
+          el("div", { className: "p2x-row" },
             el("input", { className: "p2x-input", data: { url: "" },
               placeholder: "http(s):// 音频地址", spellcheck: "false",
               on: { keydown: (e) => e.key === "Enter" && act("play") } }),
-            el("div", { className: "p2x-row", style: "margin-top:6px" },
-              el("button", { className: "p2x-btn primary", data: { act: "play" } }, "▶ 播放"),
-              el("span", { className: "p2x-note", text: "直接替换在播内容，无需先手动停止" }))),
-          el("div", null,
+            el("button", { className: "p2x-btn primary", data: { act: "play" } }, "▶ 播放")),
+          el("div", { className: "p2x-row" },
             el("input", { className: "p2x-input", data: { tts: "" }, placeholder: "要播报的文字（TTS）",
               on: { keydown: (e) => e.key === "Enter" && act("tts") } }),
-            el("div", { className: "p2x-row", style: "margin-top:6px" },
-              el("button", { className: "p2x-btn", data: { act: "tts" } }, "📢 播报"),
-              el("span", { className: "p2x-note", text: "TTS 前自动停流并等 2 秒（云端异步代发）" }))),
+            el("button", { className: "p2x-btn", data: { act: "tts" } }, "📢 播报"),
+            el("button", { className: "p2x-btn", data: { act: "tts2" },
+              title: "备用 TTS：mibrain.ai_tts_request（某些机型 text_to_speech 无声时试）" }, "🔊 播报②")),
           el("div", { className: "p2x-row" },
             el("label", { text: "音量" }),
             el("input", { data: { vol: "" }, type: "range", min: "0", max: "100",
@@ -265,11 +263,24 @@ body.p2x-page{margin:0;background:#fff;color:#1f2329;
     node.classList.toggle("err", !!isErr);
   }
 
+  /**
+   * 把响应里形如 JSON 字符串的字段解出来，便于 pretty print。
+   * 小米 mediaplayer 的播放详情塞在 data.info（一个 JSON 字符串）里，直接打印是一坨
+   * 转义字符串；这里解成对象后按 2 空格缩进展示。info 不是 JSON 就原样返回。
+   */
+  function decodeInfo(obj) {
+    if (!obj || typeof obj !== "object") return obj;
+    const data = obj.data;
+    if (!data || typeof data !== "object" || typeof data.info !== "string") return obj;
+    try { return { ...obj, data: { ...data, info: JSON.parse(data.info) } }; }
+    catch (_) { return obj; }
+  }
+
   function showRaw(obj) {
     const det = $(q.raw);
     const body = $(q.rawBody);
     if (det) det.hidden = !obj;
-    if (body) body.textContent = obj ? JSON.stringify(obj, null, 2) : "";
+    if (body) body.textContent = obj ? JSON.stringify(decodeInfo(obj), null, 2) : "";
   }
 
   function loadData(name) { return $(`[data-${name}=""]`)?.value; }
@@ -429,6 +440,7 @@ body.p2x-page{margin:0;background:#fff;color:#1f2329;
     switch (actName) {
       case "play": act("play"); break;
       case "tts": act("tts"); break;
+      case "tts2": act("tts2"); break;
       case "pause": act("pause"); break;
       case "stop": act("stop"); break;
       case "vol": act("vol"); break;
@@ -457,17 +469,16 @@ body.p2x-page{margin:0;background:#fff;color:#1f2329;
           setTimeout(refreshStatus, 2000); // 云端异步生效，稍后回读状态
           break;
         }
-        case "tts": {
+        case "tts":
+        case "tts2": {
           const text = (loadData("tts") || "").trim();
           if (!text) { setMsg("输入要播报的文字", true); return; }
           if (!did) { setMsg("先选设备", true); return; }
-          // TTS 不会打断音乐流：先 stop，云端是异步代发，等 2s 再播（对照 python 版）
-          setMsg("先停掉在播内容…");
-          await state.mina.stop(did);
-          setMsg("已下发停止，等 2 秒…");
-          await C.sleep(2000);
-          const r = await state.mina.tts(did, text);
-          setMsg("播报指令已下发");
+          // 不发 player_play_operation stop：直接下发 TTS（云端异步代发，不需要先停流）
+          const alt = name === "tts2";
+          setMsg(alt ? "下发备用播报（ai_tts_request）…" : "下发播报指令…");
+          const r = alt ? await state.mina.aiTts(did, text) : await state.mina.tts(did, text);
+          setMsg(alt ? "备用播报已下发（ai_tts_request）" : "播报指令已下发");
           showRaw(r);
           break;
         }

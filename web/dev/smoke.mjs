@@ -93,6 +93,13 @@ assert.equal(JSON.parse(new URLSearchParams(calls[0].opts.body).get("message")).
 assert.equal(JSON.parse(new URLSearchParams(calls[1].opts.body).get("message")).action, "stop");
 assert.equal(JSON.parse(new URLSearchParams(calls[2].opts.body).get("message")).volume, 40);
 
+// 备用播报 ai_tts_request（mibrain）：回归防护
+calls = [];
+await mina.aiTts("did-A", "备用播报");
+assert.equal(new URLSearchParams(calls[0].opts.body).get("method"), "ai_tts_request");
+assert.equal(new URLSearchParams(calls[0].opts.body).get("path"), "mibrain");
+assert.equal(JSON.parse(new URLSearchParams(calls[0].opts.body).get("message")).tts_text, "备用播报");
+
 /* ---------------- 2. stripXiaomi / rand ---------------- */
 assert.deepEqual(C.stripXiaomi('&&&START&&&{"code":0}'), { code: 0 });
 // 回归：nonce 是 19 位大整数，JSON.parse 会丢精度 → 必须保成字符串

@@ -366,6 +366,15 @@
       return this.ubus(did, "text_to_speech", "mibrain", { text });
     }
 
+    /**
+     * 备用 TTS：mibrain.ai_tts_request（走设备端 SpeechManager.ttsRequest）。
+     * 某些机型 text_to_speech 是"哑接口"（code 0 但无声），用它兜底试。
+     * 参数名 tts_text/show_ui 见 docs/ubus-fields-and-lx04-shell.md §2.4。
+     */
+    aiTts(did, text) {
+      return this.ubus(did, "ai_tts_request", "mibrain", { tts_text: text, show_ui: false });
+    }
+
     stop(did) {
       return this.ubus(did, "player_play_operation", "mediaplayer",
         { action: "stop", media: "app_ios" });

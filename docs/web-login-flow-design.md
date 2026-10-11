@@ -153,3 +153,6 @@
 - **「已登录但 mina 无票」场景**：浏览器有 `passToken` 但 `.mina.mi.com` 没 `serviceToken` 时，`device_list` 仍 401；
   此时走登录页会命中 `qrLogin` 的 `already` 分支（`serviceLogin(mijia)` 返回 `code=0`），**免扫码**直接换票。
   旧落地页在这个场景会瞬间跳 `/sts` 导致用户点不到书签，现已用 `&_json=true` 修掉。
+- **备用播报**：面板新增「🔊 播报②」= `mibrain.ai_tts_request {tts_text, show_ui}`（`Mina.aiTts`），
+  用于某些机型 `text_to_speech` 是“哑接口”（code 0 但无声）时兜底。同域、无需第三执行域/签名；
+  是否真能出声待真机验证（依据 `docs/ubus-fields-and-lx04-shell.md §2.4`、`docs/shell-hunt-lx04-notes.md`）。
