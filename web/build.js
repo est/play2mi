@@ -1,9 +1,9 @@
 #!/usr/bin/env node
 /* ============================================================================
- * play2xiaomi · build.js —— 构建脚本（零依赖，一个 node 没别的）
+ * play2mi · build.js —— 构建脚本（零依赖，一个 node 没别的）
  *
  * 做三件事：
- *   1. 把 src/core.js + src/main.js【纯拼接】成 dist/p2x.js：
+ *   1. 把 src/core.js + src/main.js【纯拼接】成 dist/p2m.js：
  *      不压缩、不转译、保留全部可读性，只是"减少 .js 文件数量"。
  *   2. node --check 校验产物语法（web/package.json 声明 type=module）。
  *   3. 把自包含的 index.html 原样拷到 dist/index.html。
@@ -25,14 +25,14 @@ const section = (title, code) =>
 /* ---------------------------------------------------------------- 1. 拼接 */
 
 const banner = `/* ============================================================================
- * play2xiaomi（书签小程序版）· dist/p2x.js
+ * play2mi（书签小程序版）· dist/p2m.js
  *
  * 由 build.js 从 src/core.js + src/main.js 纯拼接生成——想改逻辑请改 src，
  * 然后重新 node build.js。不要手改本文件。
  *
- * 书签安装形式：    javascript:import('<托管地址>/p2x.js?t=' + Date.now())
+ * 书签安装形式：    javascript:import('<托管地址>/p2m.js?t=' + Date.now())
  * '?t=' 是 cache-busting：动态 import 有模块缓存，重复点击书签必须换 URL
- * 才能重新执行；页内以 #p2x-root 是否存在来防重复注入（见 main.js）。
+ * 才能重新执行；页内以 #p2m-root 是否存在来防重复注入（见 main.js）。
  *
  * 运行环境约定：页面必须与被调用 API 同源（api2.mina.mi.com /
  * account.xiaomi.com），无 CORS 障碍、无服务器、凭证存于浏览器原生 Cookie。
@@ -44,9 +44,9 @@ const dist =
   section("part 2 / 2 · main.js（界面层：入口分派、面板 UI、登录编排）", SRC("main.js"));
 
 mkdirSync(join(ROOT, "dist"), { recursive: true });
-const distPath = join(ROOT, "dist", "p2x.js");
+const distPath = join(ROOT, "dist", "p2m.js");
 writeFileSync(distPath, dist);
-console.log(`[1/3] dist/p2x.js 写入完成（${dist.length} 字节，未压缩）`);
+console.log(`[1/3] dist/p2m.js 写入完成（${dist.length} 字节，未压缩）`);
 
 /* ------------------------------------------------------------ 2. 语法自检 */
 
@@ -55,11 +55,11 @@ if (check.status !== 0) {
   console.error("[2/3] node --check 失败：\n" + (check.stderr || check.stdout));
   process.exit(1);
 }
-console.log("[2/3] node --check 通过（dist/p2x.js 语法有效）");
+console.log("[2/3] node --check 通过（dist/p2m.js 语法有效）");
 
 /* ---------------------------------------------------------- 3. 指南页产物 */
 
-// index.html 是自包含的：运行时按自身地址推导出 p2x.js 与 bookmarklet，
+// index.html 是自包含的：运行时按自身地址推导出 p2m.js 与 bookmarklet，
 // 因此无需构建期注入任何 URL，直接原样拷贝即可。
 const html = readFileSync(join(ROOT, "index.html"), "utf8");
 writeFileSync(join(ROOT, "dist", "index.html"), html);

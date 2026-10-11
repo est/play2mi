@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /* ============================================================================
- * play2xiaomi · dev/smoke.mjs —— 零网络冒烟测试
+ * play2mi · dev/smoke.mjs —— 零网络冒烟测试
  *
  * 干什么：不联网，用"可替换的 fetch 实现"验证 core.js 的请求构造与协议逻辑
  *   1. Mina.deviceList / ubus / play_url fallback（对照 python 版行为）
@@ -16,8 +16,8 @@ import { fileURLToPath } from "node:url";
 
 const ROOT = dirname(fileURLToPath(import.meta.url));
 await import("file://" + join(ROOT, "..", "src", "core.js"));
-const C = globalThis.Play2xiaomi;
-assert.ok(C, "core.js 应挂出 globalThis.Play2xiaomi");
+const C = globalThis.Play2mi;
+assert.ok(C, "core.js 应挂出 globalThis.Play2mi");
 
 /* ---------------- 1. 请求构造：拦截 _fetchImpl，比对 URL 与 body ---------------- */
 

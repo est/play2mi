@@ -1,9 +1,9 @@
 {
-  "name": "play2xiaomi-web",
+  "name": "play2mi-web",
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "description": "play2xiaomi bookmarklet：无服务器、浏览器同源直连版（build: node build.js）",
+  "description": "play2mi bookmarklet：无服务器、浏览器同源直连版（build: node build.js）",
   "scripts": {
     "build": "node build.js",
     "smoke": "node dev/smoke.mjs"

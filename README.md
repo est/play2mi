@@ -1,4 +1,4 @@
-# play to xiaomi
+# play2mi
 
 stream your $url music on xiaomi smart speakers
 
@@ -45,11 +45,11 @@ stream your $url music on xiaomi smart speakers
 
 ```bash
 cd web
-node build.js        # 拼接 dist/p2x.js + 拷贝 dist/index.html
+node build.js        # 拼接 dist/p2m.js + 拷贝 dist/index.html
 node dev/smoke.mjs   # 冒烟（其实没啥测的。AI搞的形式）
 ```
 
-产物在 `web/dist/`：`p2x.js`（协议+UI，可读未压缩）与 `index.html`（指南页）。
+产物在 `web/dist/`：`p2m.js`（协议+UI，可读未压缩）与 `index.html`（指南页）。
 
 
 `web/dist/` 已 gitignore、不入库，由 Github Pages 自动构建
@@ -68,3 +68,5 @@ node dev/smoke.mjs   # 冒烟（其实没啥测的。AI搞的形式）
 - https://github.com/cherezov/dlnap/
 - https://github.com/duhow/xiaoai-patch/blob/master/research/updates.md
 - https://cdn.cnbj1.fds.api.mi-img.com/xiaoqiang/rom/lx01/mico_firmware_4215788a8_1.62.6.bin
+- 
+- https://github.com/birdsofsummer/xiaoai-crack

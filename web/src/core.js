@@ -1,5 +1,5 @@
 /* ============================================================================
- * play2xiaomi · core.js —— 协议层（无 DOM 依赖，可独立测试）
+ * play2mi · core.js —— 协议层（无 DOM 依赖，可独立测试）
  *
  * 职责（对照 python 版 src/mi_auth.py + qr_mina_play.py 的 Mina 部分）：
  *   L1  米家 APP 扫码登录（account.xiaomi.com 域内执行，免密免短信）
@@ -19,18 +19,18 @@
  * ========================================================================== */
 (() => {
   "use strict";
-  const Play2xiaomi = (globalThis.Play2xiaomi = globalThis.Play2xiaomi || {});
+  const Play2mi = (globalThis.Play2mi = globalThis.Play2mi || {});
 
-  // 调试日志：默认开启；执行 globalThis.Play2xiaomi.DEBUG = false 可整体静音。
+  // 调试日志：默认开启；执行 globalThis.Play2mi.DEBUG = false 可整体静音。
   // 若设置了 onLog(level, text)，每条日志会额外转给页面层（main.js）显示。
   const fmt = (v) => {
     if (typeof v === "string") return v;
     try { return JSON.stringify(v); } catch (_) { return String(v); }
   };
   const emit = (level, args) => {
-    if (Play2xiaomi.DEBUG !== false) console[level]("[play2xiaomi]", ...args);
-    if (typeof Play2xiaomi.onLog === "function") {
-      try { Play2xiaomi.onLog(level, args.map(fmt).join(" ")); } catch (_) { /* 日志本身不许抛 */ }
+    if (Play2mi.DEBUG !== false) console[level]("[play2mi]", ...args);
+    if (typeof Play2mi.onLog === "function") {
+      try { Play2mi.onLog(level, args.map(fmt).join(" ")); } catch (_) { /* 日志本身不许抛 */ }
     }
   };
   const log = (...a) => emit("info", a);
@@ -146,7 +146,7 @@
   }
 
   // 便于测试替换的实现点（正式环境即 globalThis.fetch）
-  Play2xiaomi._fetchImpl = (url, options) => fetch(url, options);
+  Play2mi._fetchImpl = (url, options) => fetch(url, options);
 
   async function request(url, { timeout = 25000, method = "GET", body = null, signal } = {}) {
     let text;
@@ -155,7 +155,7 @@
     log("→", tag);
     try {
       const timeoutSignal = AbortSignal.timeout(timeout);
-      resp = await Play2xiaomi._fetchImpl(url, {
+      resp = await Play2mi._fetchImpl(url, {
         method,
         body: body || undefined,
         // 带 cookie：登录跳转链会把 serviceToken 以 Set-Cookie 落到 .mina.mi.com，
@@ -457,7 +457,7 @@
 
   /* ------------------------------------------------------------- 对外导出 */
 
-  Object.assign(Play2xiaomi, {
+  Object.assign(Play2mi, {
     // 协议常量
     ACCOUNT_ORIGIN, ACCOUNT_HOST, MINA_ORIGIN, MINA_HOST, MINA_LANDING,
     LOGIN_PAGE, USE_PLAY_MUSIC_API,

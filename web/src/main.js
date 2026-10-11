@@ -1,5 +1,5 @@
 /* ============================================================================
- * play2xiaomi · main.js —— 入口与界面层
+ * play2mi · main.js —— 入口与界面层
  *
  * 职责：
  *   1. 按 location 分派三种执行环境：
@@ -10,25 +10,25 @@
  *      音箱播放（面板从不主动 stop，仅 TTS 前按协议 stop→等 2s→播报）。
  *
  * 重复点击书签：import() 带 cache-busting 会重新执行本文件，
- * 用 #p2x-root 是否存在判定"已注入"，转而做面板开合切换。
+ * 用 #p2m-root 是否存在判定"已注入"，转而做面板开合切换。
  * ========================================================================== */
 (() => {
   "use strict";
-  const C = globalThis.Play2xiaomi;
-  if (!C) throw new Error("Play2xiaomi 未初始化（core.js 未先行加载）");
+  const C = globalThis.Play2mi;
+  if (!C) throw new Error("Play2mi 未初始化（core.js 未先行加载）");
 
-  // 与 core.js 同一套日志开关（globalThis.Play2xiaomi.DEBUG = false 可整体静音）
+  // 与 core.js 同一套日志开关（globalThis.Play2mi.DEBUG = false 可整体静音）
   const log = C.log;
   const warn = C.warn;
   // 兜住未捕获错误/未处理 Promise，避免"点了没反应"时静默
-  if (!window.__p2xErrHooked) {
-    window.__p2xErrHooked = true;
+  if (!window.__p2mErrHooked) {
+    window.__p2mErrHooked = true;
     window.addEventListener("error", (e) =>
       warn("window.onerror:", e.message, (e.filename || "") + ":" + (e.lineno || 0)));
     window.addEventListener("unhandledrejection", (e) => warn("unhandledrejection:", e.reason));
   }
 
-  const KEY_DEVICE = "p2x:lastDevice";
+  const KEY_DEVICE = "p2m:lastDevice";
   // player_get_play_status 的 status 数值 → 文案（未知值则原样显示）
   const STATUS_TEXT = { 1: "▶ 播放中", 0: "■ 已停止", [-1]: "- 空闲" };
 
@@ -65,7 +65,7 @@
     }
     return node;
   };
-  /** 自定义选择器简写：p2x 井区查找 */
+  /** 自定义选择器简写：p2m 井区查找 */
   const $ = (sel, root) => (root || state.panel).querySelector(sel);
 
   // —— 页面日志：core.js/main.js 的每条 log 都镜像到此，既便于排查也填充页面 ——
@@ -91,42 +91,42 @@
   C.onLog = pushLog; // core.js 的 log/warn 一并转到这里
 
   const css = `
-body.p2x-page{margin:0;background:#fff;color:#1f2329;
+body.p2m-page{margin:0;background:#fff;color:#1f2329;
   font:14px/1.65 -apple-system,"PingFang SC","Segoe UI",sans-serif;}
-#p2x-root{max-width:680px;margin:0 auto;padding:34px 20px 70px;}
-.p2x-head{display:flex;align-items:center;gap:8px;font-size:20px;font-weight:700;margin:0 0 18px;}
-.p2x-head .sp{flex:1}
-.p2x-btn{cursor:pointer;padding:7px 13px;border-radius:9px;border:1px solid #e1e5ea;background:#f5f6f8;
+#p2m-root{max-width:680px;margin:0 auto;padding:34px 20px 70px;}
+.p2m-head{display:flex;align-items:center;gap:8px;font-size:20px;font-weight:700;margin:0 0 18px;}
+.p2m-head .sp{flex:1}
+.p2m-btn{cursor:pointer;padding:7px 13px;border-radius:9px;border:1px solid #e1e5ea;background:#f5f6f8;
   color:inherit;font:inherit;white-space:nowrap;text-decoration:none;display:inline-block}
-.p2x-btn:hover{background:#eceef2}
-.p2x-btn.primary{background:#ff6900;border-color:#ff6900;color:#fff}
-.p2x-btn.primary:hover{background:#f35f00}
-.p2x-btn:disabled{opacity:.45;cursor:not-allowed}
-.p2x-body{display:flex;flex-direction:column;gap:12px}
-.p2x-row{display:flex;gap:8px;align-items:center}
-.p2x-row label{flex:none;color:#6b7280}
-.p2x-select,.p2x-input{flex:1;min-width:0;background:#fff;border:1px solid #d8dde3;
+.p2m-btn:hover{background:#eceef2}
+.p2m-btn.primary{background:#ff6900;border-color:#ff6900;color:#fff}
+.p2m-btn.primary:hover{background:#f35f00}
+.p2m-btn:disabled{opacity:.45;cursor:not-allowed}
+.p2m-body{display:flex;flex-direction:column;gap:12px}
+.p2m-row{display:flex;gap:8px;align-items:center}
+.p2m-row label{flex:none;color:#6b7280}
+.p2m-select,.p2m-input{flex:1;min-width:0;background:#fff;border:1px solid #d8dde3;
   color:inherit;border-radius:9px;padding:8px 10px;font:inherit;width:100%}
-.p2x-status{color:#6b7280;min-height:18px;font-size:13px;word-break:break-all}
-.p2x-status.err{color:#d23b3b}
-.p2x-view{display:none}.p2x-view.on{display:block}
-.p2x-note{color:#8b93a1;font-size:12px}
-.p2x-qr{background:#f8f9fb;border:1px solid #eceef2;border-radius:12px;padding:12px;
+.p2m-status{color:#6b7280;min-height:18px;font-size:13px;word-break:break-all}
+.p2m-status.err{color:#d23b3b}
+.p2m-view{display:none}.p2m-view.on{display:block}
+.p2m-note{color:#8b93a1;font-size:12px}
+.p2m-qr{background:#f8f9fb;border:1px solid #eceef2;border-radius:12px;padding:12px;
   display:flex;flex-direction:column;align-items:center;gap:8px}
-.p2x-qr img{width:240px;height:240px}
-.p2x-foot{margin-top:22px;padding-top:12px;border-top:1px solid #eceff3;
+.p2m-qr img{width:240px;height:240px}
+.p2m-foot{margin-top:22px;padding-top:12px;border-top:1px solid #eceff3;
   color:#98a2b3;font-size:11.5px;display:flex;gap:10px;align-items:center}
-.p2x-link{color:#2563eb;cursor:pointer;text-decoration:underline}
-.p2x-detail{margin:0;font-size:12px;color:#6b7280;word-break:break-all;white-space:pre-wrap}
-.p2x-detail summary{cursor:pointer}
-.p2x-toast{position:fixed;left:50%;bottom:32px;transform:translateX(-50%);z-index:2147483002;
+.p2m-link{color:#2563eb;cursor:pointer;text-decoration:underline}
+.p2m-detail{margin:0;font-size:12px;color:#6b7280;word-break:break-all;white-space:pre-wrap}
+.p2m-detail summary{cursor:pointer}
+.p2m-toast{position:fixed;left:50%;bottom:32px;transform:translateX(-50%);z-index:2147483002;
   background:#1f2329;color:#fff;padding:10px 18px;border-radius:10px;
   font:13px -apple-system,"PingFang SC",sans-serif;box-shadow:0 8px 30px rgba(0,0,0,.25);max-width:70vw}
-.p2x-logtitle{margin:26px 0 8px;font-size:12px;color:#98a2b3;letter-spacing:.03em}
-.p2x-log{background:#0f1115;color:#d7dbe0;border-radius:10px;padding:12px 14px;min-height:120px;
+.p2m-logtitle{margin:26px 0 8px;font-size:12px;color:#98a2b3;letter-spacing:.03em}
+.p2m-log{background:#0f1115;color:#d7dbe0;border-radius:10px;padding:12px 14px;min-height:120px;
   max-height:300px;overflow:auto;font:12px/1.6 ui-monospace,SFMono-Regular,Menlo,monospace}
-.p2x-log .ln{white-space:pre-wrap;word-break:break-all}
-.p2x-log .w{color:#ffb86c}
+.p2m-log .ln{white-space:pre-wrap;word-break:break-all}
+.p2m-log .w{color:#ffb86c}
 `;
 
   /** 清空原页面（mina 域下就是个 403/404 空壳），铺上我们自己的白底 */
@@ -135,20 +135,20 @@ body.p2x-page{margin:0;background:#fff;color:#1f2329;
     document.head.innerHTML =
       '<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">';
     document.body.replaceChildren();
-    document.body.className = "p2x-page";
+    document.body.className = "p2m-page";
   }
 
   function injectShell() {
     resetPage();
-    document.head.append(el("style", { id: "p2x-style", text: css }));
-    const root = el("div", { id: "p2x-root" });
+    document.head.append(el("style", { id: "p2m-style", text: css }));
+    const root = el("div", { id: "p2m-root" });
     document.body.append(root);
     log("injectShell: 已清空原页面并重绘为整页控制台");
     return root;
   }
 
   function toast(text, ms = 5200) {
-    const t = el("div", { className: "p2x-toast", text });
+    const t = el("div", { className: "p2m-toast", text });
     document.body.append(t);
     setTimeout(() => t.remove(), ms);
   }
@@ -159,10 +159,10 @@ body.p2x-page{margin:0;background:#fff;color:#1f2329;
     log("buildPanel: 构建面板");
     state.panel = root;
     root.append(
-      el("div", { className: "p2x-head" }, "🔊 播放到小爱"),
-      el("div", { className: "p2x-body", data: { body: "" } },
+      el("div", { className: "p2m-head" }, "🔊 播放到小爱"),
+      el("div", { className: "p2m-body", data: { body: "" } },
         // —— 视图：加载中 ——
-        view("loading", el("div", { className: "p2x-status", data: { load: "" } }, "连接中…")),
+        view("loading", el("div", { className: "p2m-status", data: { load: "" } }, "连接中…")),
         // —— 视图：需要登录 ——
         view("login",
           el("div", null,
@@ -170,51 +170,51 @@ body.p2x-page{margin:0;background:#fff;color:#1f2329;
             el("div", { style: "height:10px" }),
             // 用 window.open 而非 target=_blank：保留窗口句柄，登录成功后自动关掉它。
             // 落地页带 &_json=true（见 core.js LOGIN_PAGE），不会自动跳走，用户能从容点书签。
-            el("a", { className: "p2x-btn primary", href: C.LOGIN_PAGE, target: "_blank",
+            el("a", { className: "p2m-btn primary", href: C.LOGIN_PAGE, target: "_blank",
               on: { click: (e) => {
                 e.preventDefault();
-                state.loginWin = window.open(C.LOGIN_PAGE, "p2x_login");
+                state.loginWin = window.open(C.LOGIN_PAGE, "p2m_login");
                 log("登录视图: 已打开登录页窗口 =", !!state.loginWin);
               } } }, "🔐 去扫码登录"),
             el("div", { style: "height:10px" }),
-            el("div", { className: "p2x-note",
+            el("div", { className: "p2m-note",
               text: "新标签页会打开一个小米账号页面（可能只显示一串 JSON，属正常）；请在那个页面里再点一次书签，即可显示二维码（免密码、免短信）。扫完切回本页会自动刷新，登录标签页也会自动关闭。" }))),
         // —— 视图：主面板 ——
         view("main",
-          el("div", { className: "p2x-row" },
+          el("div", { className: "p2m-row" },
             el("label", { text: "设备" }),
-            el("select", { className: "p2x-select", data: { device: "" },
+            el("select", { className: "p2m-select", data: { device: "" },
               on: { change: (e) => { state.selected = e.target.value; state.pauseSupported = undefined; localStorage.setItem(KEY_DEVICE, state.selected); refreshStatus(); } } }),
-            el("button", { className: "p2x-btn", title: "刷新设备列表", data: { act: "devs" } }, "⟳")),
-          el("div", { className: "p2x-row" },
-            el("input", { className: "p2x-input", data: { url: "" },
+            el("button", { className: "p2m-btn", title: "刷新设备列表", data: { act: "devs" } }, "⟳")),
+          el("div", { className: "p2m-row" },
+            el("input", { className: "p2m-input", data: { url: "" },
               placeholder: "http(s):// 音频地址", spellcheck: "false",
               on: { keydown: (e) => e.key === "Enter" && act("play") } }),
-            el("button", { className: "p2x-btn primary", data: { act: "play" } }, "▶ 播放")),
-          el("div", { className: "p2x-row" },
-            el("input", { className: "p2x-input", data: { tts: "" }, placeholder: "要播报的文字（TTS）",
+            el("button", { className: "p2m-btn primary", data: { act: "play" } }, "▶ 播放")),
+          el("div", { className: "p2m-row" },
+            el("input", { className: "p2m-input", data: { tts: "" }, placeholder: "要播报的文字（TTS）",
               on: { keydown: (e) => e.key === "Enter" && act("tts") } }),
-            el("button", { className: "p2x-btn", data: { act: "tts" } }, "📢 播报"),
-            el("button", { className: "p2x-btn", data: { act: "tts2" },
+            el("button", { className: "p2m-btn", data: { act: "tts" } }, "📢 播报"),
+            el("button", { className: "p2m-btn", data: { act: "tts2" },
               title: "备用 TTS：mibrain.ai_tts_request（某些机型 text_to_speech 无声时试）" }, "🔊 播报②")),
-          el("div", { className: "p2x-row" },
+          el("div", { className: "p2m-row" },
             el("label", { text: "音量" }),
             el("input", { data: { vol: "" }, type: "range", min: "0", max: "100",
               on: { input: (e) => { $(q.volv).textContent = e.target.value; } } }),
             el("span", { data: { volv: "" }, style: "width:36px;text-align:right" }),
-            el("button", { className: "p2x-btn", data: { act: "vol" } }, "设定")),
-          el("div", { className: "p2x-row" },
-            el("button", { className: "p2x-btn", data: { act: "pause" } }, "⏸ 暂停/继续"),
-            el("button", { className: "p2x-btn", data: { act: "stop" } }, "■ 停止"),
-            el("button", { className: "p2x-btn", data: { act: "status" } }, "↻ 状态")),
-          el("details", { className: "p2x-detail", data: { raw: "" }, hidden: "" },
+            el("button", { className: "p2m-btn", data: { act: "vol" } }, "设定")),
+          el("div", { className: "p2m-row" },
+            el("button", { className: "p2m-btn", data: { act: "pause" } }, "⏸ 暂停/继续"),
+            el("button", { className: "p2m-btn", data: { act: "stop" } }, "■ 停止"),
+            el("button", { className: "p2m-btn", data: { act: "status" } }, "↻ 状态")),
+          el("details", { className: "p2m-detail", data: { raw: "" }, hidden: "" },
             el("summary", { text: "最近一次响应" }),
             el("div", { data: { rawBody: "" } })),
-          el("div", { className: "p2x-status", data: { msg: "" } }))),
-      el("div", { className: "p2x-logtitle", text: "运行日志" }),
-      el("div", { className: "p2x-log", data: { log: "" } }),
-      el("div", { className: "p2x-foot" },
-        el("a", { className: "p2x-link", href: C.LOGIN_PAGE, target: "_blank", rel: "noopener", text: "重新登录" }),
+          el("div", { className: "p2m-status", data: { msg: "" } }))),
+      el("div", { className: "p2m-logtitle", text: "运行日志" }),
+      el("div", { className: "p2m-log", data: { log: "" } }),
+      el("div", { className: "p2m-foot" },
+        el("a", { className: "p2m-link", href: C.LOGIN_PAGE, target: "_blank", rel: "noopener", text: "重新登录" }),
         el("span", { style: "flex:1" }),
         el("span", { text: "无服务器 · 浏览器直连" })),
     );
@@ -227,14 +227,14 @@ body.p2x-page{margin:0;background:#fff;color:#1f2329;
     });
 
     state.views = {};
-    for (const v of root.querySelectorAll(".p2x-view")) state.views[v.dataset.viewName] = v;
+    for (const v of root.querySelectorAll(".p2m-view")) state.views[v.dataset.viewName] = v;
     logBox = $(q.log);
     flushLogs();
     log("buildPanel: 完成，视图 =", Object.keys(state.views).join("/"));
   }
 
   const q = {
-    view: (n) => `.p2x-view[data-view-name="${n}"]`,
+    view: (n) => `.p2m-view[data-view-name="${n}"]`,
     load: '[data-load=""]', msg: '[data-msg=""]',
     device: "select[data-device]", url: '[data-url=""]', tts: '[data-tts=""]',
     vol: '[data-vol=""]', volv: '[data-volv=""]', raw: '[data-raw=""]',
@@ -244,7 +244,7 @@ body.p2x-page{margin:0;background:#fff;color:#1f2329;
 
   /** 创建一个可切换的视图容器 */
   function view(name, ...nodes) {
-    const d = el("div", { className: "p2x-view" });
+    const d = el("div", { className: "p2m-view" });
     d.dataset.viewName = name;
     d.append(...nodes);
     return d;
@@ -289,8 +289,8 @@ body.p2x-page{margin:0;background:#fff;color:#1f2329;
     log("init: 触发（href=" + location.href + "，readyState=" + document.readyState + "）");
     try {
       // 每次书签都带 ?t= 强制重新执行：直接清空原页面整页重绘，不做小窗叠加
-      // 开发预览钩子：dev/preview.html 里可强制走某分支（window.__P2X_FORCE__='mina'|'account'）
-      const forced = window.__P2X_FORCE__;
+      // 开发预览钩子：dev/preview.html 里可强制走某分支（window.__P2M_FORCE__='mina'|'account'）
+      const forced = window.__P2M_FORCE__;
       if ((forced === "mina" && location.host !== C.MINA_HOST) ||
           (forced === "account" && location.origin !== C.ACCOUNT_ORIGIN)) {
         log("init: dev preview 强制分支 =", forced);
@@ -319,7 +319,7 @@ body.p2x-page{margin:0;background:#fff;color:#1f2329;
           "打开后，请在刚出现的新窗口/标签页里【再点一次这个书签】来唤起控制面板。\n\n" +
           "现在打开控制台页吗？");
         if (!ok) { log("init: 用户取消"); return; }
-        window.open(C.MINA_LANDING, "p2x_console");
+        window.open(C.MINA_LANDING, "p2m_console");
         toast("已打开「播放到小爱」控制台标签页，请切过去再点一次书签 🔊");
       }
     } catch (e) {
@@ -335,22 +335,22 @@ body.p2x-page{margin:0;background:#fff;color:#1f2329;
     buildPanel(root);
     // 登录弹窗完成 → 重新探测（不做任何自动停止，原则：不打断在播内容）
     // 每次重绘都会替换旧监听，避免多次点书签后累积、且旧闭包操作已移除的节点
-    if (window.__p2xMsgHandler) window.removeEventListener("message", window.__p2xMsgHandler);
-    window.__p2xMsgHandler = (e) => {
-      if (e.origin === C.ACCOUNT_ORIGIN && e.data?.type === "p2x:login-done") {
+    if (window.__p2mMsgHandler) window.removeEventListener("message", window.__p2mMsgHandler);
+    window.__p2mMsgHandler = (e) => {
+      if (e.origin === C.ACCOUNT_ORIGIN && e.data?.type === "p2m:login-done") {
         log("setupMina: 收到登录完成消息，重新探测");
         probe();
       }
     };
-    window.addEventListener("message", window.__p2xMsgHandler);
+    window.addEventListener("message", window.__p2mMsgHandler);
     // 登录页用 <a target=_blank rel=noopener> 打开，opener 为 null → postMessage 收不到，
     // 所以切回本页时再兜一次：若仍在登录视图就重试 device_list。
-    if (window.__p2xFocusHandler) window.removeEventListener("focus", window.__p2xFocusHandler);
-    window.__p2xFocusHandler = () => {
-      const loginOn = $('.p2x-view[data-view-name="login"]')?.classList.contains("on");
+    if (window.__p2mFocusHandler) window.removeEventListener("focus", window.__p2mFocusHandler);
+    window.__p2mFocusHandler = () => {
+      const loginOn = $('.p2m-view[data-view-name="login"]')?.classList.contains("on");
       if (loginOn) { log("setupMina: 回到页面，重试 device_list"); probe(); }
     };
-    window.addEventListener("focus", window.__p2xFocusHandler);
+    window.addEventListener("focus", window.__p2mFocusHandler);
     setView("loading");
     probe();
   }
@@ -513,19 +513,19 @@ body.p2x-page{margin:0;background:#fff;color:#1f2329;
 
   function setupAccount() {
     log("setupAccount: 开始");
-    const root = document.getElementById("p2x-root");
+    const root = document.getElementById("p2m-root");
     state.panel = root; // 让 $() 有根
     root.append(
-      el("div", { className: "p2x-head" }, "🔐 小爱云登录"),
-      el("div", { className: "p2x-body" },
-        el("div", { className: "p2x-status", data: { phase: "" } }, "正在检查登录状态…"),
-        el("div", { className: "p2x-status err", data: { err: "" }, hidden: "" }),
-        el("div", { className: "p2x-qr", data: { qrbox: "" }, hidden: "" }),
-        el("div", { className: "p2x-note", data: { qrurl: "" }, hidden: "" }),
-        el("div", { className: "p2x-status", data: { done: "" }, hidden: "" })),
-      el("div", { className: "p2x-logtitle", text: "运行日志" }),
-      el("div", { className: "p2x-log", data: { log: "" } }),
-      el("div", { className: "p2x-foot" },
+      el("div", { className: "p2m-head" }, "🔐 小爱云登录"),
+      el("div", { className: "p2m-body" },
+        el("div", { className: "p2m-status", data: { phase: "" } }, "正在检查登录状态…"),
+        el("div", { className: "p2m-status err", data: { err: "" }, hidden: "" }),
+        el("div", { className: "p2m-qr", data: { qrbox: "" }, hidden: "" }),
+        el("div", { className: "p2m-note", data: { qrurl: "" }, hidden: "" }),
+        el("div", { className: "p2m-status", data: { done: "" }, hidden: "" })),
+      el("div", { className: "p2m-logtitle", text: "运行日志" }),
+      el("div", { className: "p2m-log", data: { log: "" } }),
+      el("div", { className: "p2m-foot" },
         el("span", { text: "登录只发生在你的浏览器里，服务器不经手凭证" })),
     );
     logBox = $(q.log);
@@ -562,7 +562,7 @@ body.p2x-page{margin:0;background:#fff;color:#1f2329;
           if (src) {
             qrbox.append(el("img", { src, alt: "登录二维码", width: 240, height: 240 }));
           } else {
-            qrbox.append(el("div", { className: "p2x-note", text: "未取到二维码地址" }));
+            qrbox.append(el("div", { className: "p2m-note", text: "未取到二维码地址" }));
           }
           if (stage.loginUrl) {
             qrurl.hidden = false;
@@ -583,7 +583,7 @@ body.p2x-page{margin:0;background:#fff;color:#1f2329;
       done.textContent = "小爱云票已就位（浏览器已在 .mina.mi.com 域种好服务 Cookie）。" +
         "切回控制台标签页，或直接关闭本页。";
       try {
-        window.opener?.postMessage({ type: "p2x:login-done" }, C.MINA_ORIGIN);
+        window.opener?.postMessage({ type: "p2m:login-done" }, C.MINA_ORIGIN);
       } catch (_) { /* 控制台标签页已关也无妨，用户手动切回 */ }
     } catch (e) {
       if (signal.aborted || e?.name === "AbortError") { log("runLogin: 已取消/被新尝试取代"); return; }
