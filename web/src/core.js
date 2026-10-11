@@ -67,9 +67,17 @@
     return a.slice(0, n).join("");
   }
 
-  /** 小米 account 域返回的 JSON 挂着 "&&&START&&&" 前缀，剥掉再 parse */
+  /**
+   * 小米 account 域返回的 JSON 挂着 "&&&START&&&" 前缀，剥掉再 parse。
+   *
+   * 关键：nonce 是 19 位大整数（> Number.MAX_SAFE_INTEGER ≈ 9e15），直接 JSON.parse
+   * 会丢精度（如 2818502318476480512 → …500），导致 clientSign 用错值、/sts 恒 401。
+   * 先把 >=15 位的整数字面量包成字符串再解析，保住原文。
+   */
   function stripXiaomi(text) {
-    return JSON.parse(String(text).replace("&&&START&&&", ""));
+    const s = String(text).replace("&&&START&&&", "");
+    const safe = s.replace(/:(\d{15,})(?=[,}\]\s]|$)/g, ':"$1"');
+    return JSON.parse(safe);
   }
 
   /** 只在目标域自身的页面上执行时才有意义；辅助票用（deviceId/sdkVersion/userId） */

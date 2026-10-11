@@ -95,6 +95,10 @@ assert.equal(JSON.parse(new URLSearchParams(calls[2].opts.body).get("message")).
 
 /* ---------------- 2. stripXiaomi / rand ---------------- */
 assert.deepEqual(C.stripXiaomi('&&&START&&&{"code":0}'), { code: 0 });
+// 回归：nonce 是 19 位大整数，JSON.parse 会丢精度 → 必须保成字符串
+const bigNonce = C.stripXiaomi('&&&START&&&{"code":0,"nonce":2818502318476480512,"ssecurity":"x"}');
+assert.equal(typeof bigNonce.nonce, "string", "大整数 nonce 必须保成字符串");
+assert.equal(bigNonce.nonce, "2818502318476480512", "大整数 nonce 不能丢精度");
 assert.equal(C.rand(16).length, 16);
 assert.ok(new Set(C.rand(30).split("")).size === 30, "rand 不放回抽样");
 
