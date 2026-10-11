@@ -139,7 +139,7 @@
   // 本页不参与打包：运行时按自身地址推导出 init.js 与 bookmarklet，直接可用。
   (function () {
     var js = new URL("init.js", location.href).href;
-    var bm = "javascript:import('" + js + "?t=' + Date.now()).catch(location.href='https://api2.mina.mi.com/#请点击play2mi书签')";
+    var bm = "javascript:import('" + js + "?t=' + Date.now()).catch(()=>{location.href='https://api2.mina.mi.com/#请点击play2mi书签'})";
     document.getElementById("bm").setAttribute("href", bm);
     document.getElementById("bm-code").textContent = bm;
     document.getElementById("host-url").textContent = js;

@@ -554,15 +554,13 @@ body.p2m-page{margin:0;background:#fff;color:#1f2329;
           log("runLogin: 收到二维码阶段（官方图：" + (stage.qr ? "有" : "无") + "）");
           qrbox.hidden = false;
           qrbox.replaceChildren();
-          // 与 python 版一致：优先官方 qr 图片；缺图则用公开服务按 loginUrl 现场渲染
-          const src = stage.qr || (stage.loginUrl
-            ? "https://api.qrserver.com/v1/create-qr-code/?size=240x240&data="
-              + encodeURIComponent(stage.loginUrl)
-            : "");
+          // 只用官方下发的 qr 图片（account.xiaomi.com 同源）。绝不把 loginUrl 交给任何
+          // 第三方二维码服务——那等于把登录票据泄给外人，与"隐私优先"背道而驰。
+          const src = stage.qr || "";
           if (src) {
             qrbox.append(el("img", { src, alt: "登录二维码", width: 240, height: 240 }));
           } else {
-            qrbox.append(el("div", { className: "p2m-note", text: "未取到二维码地址" }));
+            qrbox.append(el("div", { className: "p2m-note", text: "未取到官方二维码地址，请用下方链接完成登录" }));
           }
           if (stage.loginUrl) {
             qrurl.hidden = false;

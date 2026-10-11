@@ -68,5 +68,4 @@ node dev/smoke.mjs   # 冒烟（其实没啥测的。AI搞的形式）
 - https://github.com/cherezov/dlnap/
 - https://github.com/duhow/xiaoai-patch/blob/master/research/updates.md
 - https://cdn.cnbj1.fds.api.mi-img.com/xiaoqiang/rom/lx01/mico_firmware_4215788a8_1.62.6.bin
-- 
 - https://github.com/birdsofsummer/xiaoai-crack

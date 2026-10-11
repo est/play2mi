@@ -80,15 +80,10 @@ def _rand(n=16) -> str:
 def _build_qr_html(qr_url: str | None, login_url: str | None) -> str:
     """生成一个本地 HTML 展示二维码，返回 file:// URL（纯标准库，零依赖）。
 
-    优先用官方下发的 qr 图片地址；若缺失则用公开 qrserver 按 loginUrl 现场渲染。
+    只用官方下发的 qr 图片地址——绝不把 loginUrl（含登录票据）交给任何第三方
+    二维码服务，那等于把票据泄给外人。缺图时页面只展示 loginUrl 文本。
     """
-    if qr_url:
-        img_src = qr_url
-    elif login_url:
-        img_src = ("https://api.qrserver.com/v1/create-qr-code/?size=260x260&data="
-                   + urllib.parse.quote(login_url, safe=""))
-    else:
-        img_src = ""
+    img_src = qr_url or ""
     esc_img = img_src.replace("&", "&amp;").replace('"', "&quot;")
     esc_login = (login_url or "-").replace("&", "&amp;").replace("<", "&lt;")
     html = (f"""<!doctype html><html lang="zh"><head><meta charset="utf-8">"""

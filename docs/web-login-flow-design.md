@@ -36,7 +36,7 @@
  1. 注入 init.js                      → main.js 命中 account 域 → setupAccount → runLogin
  2. GET /pass/serviceLogin?sid=mijia&_json=true               → 200（code≠0 + location）
  3. GET /longPolling/loginUrl?…（取 location 的 query 当参数） → 200（qr / loginUrl / lp）
-    渲染官方二维码（qr 图；缺图则用 qrserver 按 loginUrl 现场渲染）
+    渲染官方二维码（同源 qr 图；绝不把 loginUrl 交给第三方二维码服务）
  4. 米家 APP 扫码 → GET {lp}（长轮询，150s/次，最多 5 次）     → 200（userId/passToken/ssecurity/nonce）
     <img> 触发回调 GET sts.api.mijia.tech/mijia/sts?…         → 200（尽力而为，非必须）
  5. GET /pass/serviceLogin?sid=micoapi&_json=true             → 200（nonce + ssecurity + location）
