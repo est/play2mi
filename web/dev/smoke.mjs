@@ -136,6 +136,7 @@ assert.match(calls[1].url, /sid=mijia/);
 assert.match(calls[1].url, /_qrsize=240/);
 assert.ok(qrStage && qrStage.qr && qrStage.lp);
 assert.ok(calls.some((c) => /\/longPolling\/lp\//.test(c.url)), "扫码后应长轮询 lp");
-assert.match(C.LOGIN_PAGE, /^https:\/\/account\.xiaomi\.com\/pass\/serviceLogin\?sid=micoapi$/);
+assert.match(C.LOGIN_PAGE, /^https:\/\/account\.xiaomi\.com\/pass\/serviceLogin\?sid=micoapi&_json=true$/,
+  "LOGIN_PAGE 必须是不会自动跳转的 _json=true 落地页（否则已登录时用户没机会点书签）");
 
 console.log("✅ smoke 全部通过：device_list / play_url fallback / ubus 载荷 / QR 端点 / stripXiaomi·rand");

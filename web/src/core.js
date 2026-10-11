@@ -44,7 +44,11 @@
   const MINA_ORIGIN = "https://api2.mina.mi.com";
   const MINA_HOST = "api2.mina.mi.com";
   const MINA_LANDING = MINA_ORIGIN + "/";
-  const LOGIN_PAGE = ACCOUNT_ORIGIN + "/pass/serviceLogin?sid=micoapi";
+  const LOGIN_PAGE = ACCOUNT_ORIGIN + "/pass/serviceLogin?sid=micoapi&_json=true";
+  // 为什么带 &_json=true：登录落地页必须是 account.xiaomi.com 上【不会自动跳转】的页面，
+  // 用户才有机会在上面点书签。直接开 /pass/serviceLogin?sid=micoapi 在"已登录"时会瞬间
+  // 跳到 api2.mina.mi.com/sts（401）——用户根本没时间点书签。加 &_json=true 后服务端返回
+  // JSON 文本、原地不动（未登录/已登录都稳定），main.js 注入后会清屏重绘成登录面板。
 
   // 这些硬件的新固件不支持 player_play_url，需 fallback 到 player_play_music
   // （对照 python 版 USE_PLAY_MUSIC_API，勿随意改动）

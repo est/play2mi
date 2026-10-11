@@ -29,7 +29,8 @@
 [控制台页] api2.mina.mi.com
  0. 注入 p2x.js                      → main.js 命中 mina 域 → 建面板 → probe
     GET /admin/v2/device_list         → 401（未登录）→ 切到「需要登录」视图
-    点「🔐 去扫码登录」→ 新标签打开 LOGIN_PAGE(account.xiaomi.com/pass/serviceLogin?sid=micoapi)
+    点「🔐 去扫码登录」→ window.open 打开 LOGIN_PAGE
+      = account.xiaomi.com/pass/serviceLogin?sid=micoapi&_json=true（不会自动跳转，见 §3.8）
 
 [登录页] account.xiaomi.com
  1. 注入 p2x.js                      → main.js 命中 account 域 → setupAccount → runLogin
@@ -71,6 +72,14 @@
 7. **域名后缀匹配分派**：小米登录链会把页面/请求落到子域（如 `account.xiaomi.com/fe/service/login`、
    `c3.lp.account.xiaomi.com`），精确 `origin`/`host` 相等会漏判。改用后缀匹配
    （`/(^|\.)account\.xiaomi.com$/`、`/(^|\.)mina\.mi.com$/`）。
+8. **登录落地页必须「不会自动跳转」**：书签只能运行在**当前页面**，所以登录页必须停在 `account.xiaomi.com`
+   上等用户点书签。直接开 `/pass/serviceLogin?sid=micoapi` 时，若浏览器已有有效 `passToken`，服务端会
+   **瞬间 302 到 `api2.mina.mi.com/sts`（401）**，用户根本没机会点书签。改用
+   `/pass/serviceLogin?sid=micoapi&_json=true`：服务端返回 JSON 文本、原地不动（未登录/已登录都稳定），
+   `main.js` 注入后会清屏重绘成登录面板。未登录时 `qrLogin` 弹二维码；已登录时走 `already` 分支免扫码换票。
+9. **登录页窗口句柄 + 自动关闭**：登录链接改用 `window.open(LOGIN_PAGE, "p2x_login")` 而非
+   `target=_blank rel=noopener`，以便控制台页保留窗口句柄；`probe()` 成功后调用 `closeLoginWin()` 自动关掉
+   登录标签页（也顺带让登录页的 `postMessage` 能到达控制台）。
 
 ---
 
@@ -84,6 +93,8 @@
 | 票的流转 | 浏览器链路自动落 | 仍无中继，靠隐式 Cookie；额外要清 web 链路 cookie 才拿得到 `nonce` |
 | 旧代码里的判断 | “account 域不返回 CORS，自定义扫码/换票在书签里做不到” | 该判断已被推翻：真正卡点是大整数精度（见 §5 时间线） |
 | 域分派 | 精确 `location.origin === ACCOUNT_ORIGIN` / `location.host === MINA_HOST` | 域名后缀匹配，容忍子域 |
+| 登录落地页 | `/pass/serviceLogin?sid=micoapi`：已登录时会瞬间跳 `/sts`(401)，用户没机会点书签 | `/pass/serviceLogin?sid=micoapi&_json=true`：原地不动，稳定可点书签 |
+| 登录页窗口 | `<a target=_blank rel=noopener>`：无句柄、`postMessage` 收不到 | `window.open(…,"p2x_login")` 保留句柄，`probe()` 成功后自动关闭 |
 
 **演进中的中间态（v1.5）**：`exchangeMicoapi` 曾用**跨域 `fetch`** 去请求 `/sts`，
 结果“读不到响应、Cookie 也不落”，被视为“登录 blocked”。后来发现并修正了两点才成为今天的新设计：
@@ -135,3 +146,6 @@
   `--disable-background-timer-throttling` 规避（仅测试脚本需要，正式书签环境无此问题）。
 - **`refreshStatus` 空指针（本次 e2e 发现，已修）**：登录完成、面板重绘后状态节点可能取不到，
   旧代码直接 `node.textContent = …` 会抛 `Cannot set properties of null`。已在 `main.js` 加 `if (!node) return;` 兜底。
+- **「已登录但 mina 无票」场景**：浏览器有 `passToken` 但 `.mina.mi.com` 没 `serviceToken` 时，`device_list` 仍 401；
+  此时走登录页会命中 `qrLogin` 的 `already` 分支（`serviceLogin(mijia)` 返回 `code=0`），**免扫码**直接换票。
+  旧落地页在这个场景会瞬间跳 `/sts` 导致用户点不到书签，现已用 `&_json=true` 修掉。

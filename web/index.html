@@ -140,7 +140,7 @@
   // 本页不参与打包：运行时按自身地址推导出 p2x.js 与 bookmarklet，直接可用。
   (function () {
     var js = new URL("p2x.js", location.href).href;
-    var bm = "javascript:import('" + js + "?t=' + Date.now())";
+    var bm = "javascript:import('" + js + "?t=' + Date.now()).catch(location='')";
     document.getElementById("bm").setAttribute("href", bm);
     document.getElementById("bm-code").textContent = bm;
     document.getElementById("host-url").textContent = js;

@@ -39,6 +39,7 @@
     panel: null,        // 控制台面板根节点（仅 mina 页有）
     views: {},
     abortLogin: null,   // 登录页长轮询的取消信号
+    loginWin: null,     // 打开登录页的窗口句柄（登录成功后自动关闭它）
     pauseSupported: undefined, // 运行时探测结果缓存
   };
 
@@ -168,10 +169,17 @@ body.p2x-page{margin:0;background:#fff;color:#1f2329;
           el("div", null,
             el("div", { text: "还没有登录小爱云（或凭证过期）。" }),
             el("div", { style: "height:10px" }),
-            el("a", { className: "p2x-btn primary", href: C.LOGIN_PAGE, target: "_blank", rel: "noopener" }, "🔐 去扫码登录"),
+            // 用 window.open 而非 target=_blank：保留窗口句柄，登录成功后自动关掉它。
+            // 落地页带 &_json=true（见 core.js LOGIN_PAGE），不会自动跳走，用户能从容点书签。
+            el("a", { className: "p2x-btn primary", href: C.LOGIN_PAGE, target: "_blank",
+              on: { click: (e) => {
+                e.preventDefault();
+                state.loginWin = window.open(C.LOGIN_PAGE, "p2x_login");
+                log("登录视图: 已打开登录页窗口 =", !!state.loginWin);
+              } } }, "🔐 去扫码登录"),
             el("div", { style: "height:10px" }),
             el("div", { className: "p2x-note",
-              text: "新标签页会打开小米账号登录页；请在那个页面里再点一次书签，即可显示二维码（免密码、免短信）。扫完切回本页会自动刷新。" }))),
+              text: "新标签页会打开一个小米账号页面（可能只显示一串 JSON，属正常）；请在那个页面里再点一次书签，即可显示二维码（免密码、免短信）。扫完切回本页会自动刷新，登录标签页也会自动关闭。" }))),
         // —— 视图：主面板 ——
         view("main",
           el("div", { className: "p2x-row" },
@@ -336,15 +344,25 @@ body.p2x-page{margin:0;background:#fff;color:#1f2329;
     probe();
   }
 
+  /** 登录成功后关掉「去扫码登录」打开的窗口（用 window.open 才有句柄） */
+  function closeLoginWin() {
+    const w = state.loginWin;
+    state.loginWin = null;
+    if (w && !w.closed) {
+      try { w.close(); log("closeLoginWin: 已关闭登录页窗口"); }
+      catch (e) { warn("closeLoginWin: 关闭失败（可手动关闭）", e?.message || e); }
+    }
+  }
+
   async function probe() {
     log("probe: 开始拉取设备列表");
     setView("loading");
     $(q.load).textContent = "正在连接小爱云…";
     try {
-      state.devices = await state.mina.deviceList();
-      log("probe: 成功，设备数 =", state.devices.length);
+      state.devices = await state.mina.deviceList();      log("probe: 成功，设备数 =", state.devices.length);
       renderDevices();
       setView("main");
+      closeLoginWin();
       refreshStatus(); // 面板打开即读当前播放状态，不动音箱
     } catch (e) {
       warn("probe: device_list 失败，切到登录视图 →", e?.message || e);
