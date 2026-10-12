@@ -46,7 +46,7 @@
 <div class="wrap">
   <h1>🔊 play2mi</h1>
   <p class="lead">把任意 <code>http(s)://</code> 音频流投放到<img height="16" src="https://www.mi.com/favicon.ico" />音箱上播放，并支持 TTS、音量、
-     暂停 / 停止。<b>无需下载，免第三方服务器</b>：一个小书签（bookmarklet），浏览器直连官方API。</p>
+     暂停 / 停止。<b>无需root，无需刷机，无需下载软件，免第三方服务器</b>：一个小书签（bookmarklet），浏览器直连官方API。</p>
   <h2>安装（两步）</h2>
   <div class="step"><div class="n">1</div><div>
     <b>显示书签栏</b>：按 <code>Ctrl/Cmd + Shift + B</code>（Chrome / Edge / Firefox 均可）</div></div>
@@ -61,15 +61,15 @@
     <p>移动端浏览器，复制上面代码，手动添加到书签</p>
   </div></div>
   <div class="step"><div class="n">3</div><div>
-    <b>点击它</b>：根据提示使用。首次会让你扫码登录小米账号，需要在登录页面再次点击该书签</div></div>
+    <b>点击它</b>：根据提示使用。首次会让你扫码登录<img height="16" src="https://www.mi.com/favicon.ico" />账号，需要在登录页面再次点击该书签</div></div>
 
   <h2>说明</h2>
 
   <details open>
     <summary>为什么要点两次、三次？</summary>
     <div class="body">
-      <p>浏览器的跨域（CORS）规则禁止一般网站无法调用小米云接口。这个书签的思路是：
-        <b>让界面运行在小米自己的域名上</b>，这样调用就是“同源”，没有任何障碍。代价是每个不同的页面必须分别点一次激活</p>
+      <p>浏览器的跨域（CORS）规则禁止一般网站无法调用<img height="16" src="https://www.mi.com/favicon.ico" />云接口。这个书签的思路是：
+        <b>让界面运行在官方域名上</b>，这样调用就是“同源”，没有任何障碍。代价是每个不同的页面必须分别点一次激活</p>
       <ol>
         <li>点书签 → 检查当前页面地址 → 弹确认框 → 打开 <code>api2.mina.mi.com</code>（官方云API）；</li>
         <li>在那个窗口<b>再点一次书签</b> → 注入控制面板（页面变化后书签失效，所以必须点两次）。</li>
@@ -85,7 +85,7 @@
       <p>没登录时面板会引导你：点「去扫码登录」</p>
       <p>代码会自动在新标签页打开 <code>account.xiaomi.com</code> →
         在那个页面里<b>再点一次书签</b> → 用 <img height="16" src="https://cdn.web-global.fds.api.mi-img.com/mijia/prod/home/favicon.ico" />App 或者 <img height="16" src="https://www.mi.com/favicon.ico" />账号 扫描二维码→
-        登录完成把凭证写进小米域 Cookie → 页面自动刷新 跳转。</p>
+        登录完成把凭证写进官方域名 Cookie → 页面自动刷新 跳转。</p>
       <p class="muted">凭证由浏览器自己保存，有效期内不用重复登录。</p>
     </div>
   </details>
@@ -95,7 +95,7 @@
     <div class="body">
       <table>
         <tr><th>功能</th><th>说明</th></tr>
-        <tr><td>设备选择</td><td>列出主账号下的小爱音箱，可刷新、记住上次选择</td></tr>
+        <tr><td>设备选择</td><td>列出主账号下的<img height="16" src="https://www.mi.com/favicon.ico" />音箱，可刷新、记住上次选择</td></tr>
         <tr><td>播放 URL</td><td>输入 <code>http(s)://</code> 音频地址直接投放
             （mp3 / flac / aac 等由音箱固件支持，常用于自建电台 / 局域网 NAS）</td></tr>
         <tr><td>TTS 播报</td><td>直接下发播报（云端异步代发，不打断在播内容），适合“提醒”类用法</td></tr>

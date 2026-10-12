@@ -41,9 +41,12 @@
   const ACCOUNT_ORIGIN = "https://account.xiaomi.com";
   const ACCOUNT_HOST = "account.xiaomi.com";
   // 落地页：任何真实响应的文档都可书签执行（403 openresty 页也无妨）
+  // hash 提示只放在 api2.mina.mi.com 落地页：新窗口地址栏显示一句提醒，
+  // 避免“跳过去一片空白/403 就茫然”。书签点过后由 main.js setupMina 清掉。
+  const BOOKMARKLET_HASH = "#请点击play2mi书签";
   const MINA_ORIGIN = "https://api2.mina.mi.com";
   const MINA_HOST = "api2.mina.mi.com";
-  const MINA_LANDING = MINA_ORIGIN + "/";
+  const MINA_LANDING = MINA_ORIGIN + "/" + BOOKMARKLET_HASH;
   const LOGIN_PAGE = ACCOUNT_ORIGIN + "/pass/serviceLogin?sid=micoapi&_json=true";
   // 为什么带 &_json=true：登录落地页必须是 account.xiaomi.com 上【不会自动跳转】的页面，
   // 用户才有机会在上面点书签。直接开 /pass/serviceLogin?sid=micoapi 在"已登录"时会瞬间
@@ -460,7 +463,7 @@
   Object.assign(Play2mi, {
     // 协议常量
     ACCOUNT_ORIGIN, ACCOUNT_HOST, MINA_ORIGIN, MINA_HOST, MINA_LANDING,
-    LOGIN_PAGE, USE_PLAY_MUSIC_API,
+    LOGIN_PAGE, BOOKMARKLET_HASH, USE_PLAY_MUSIC_API,
     // 客户端与流程
     Mina, loginMina, qrLogin, exchangeMicoapi, ensureDeviceId,
     // 工具

@@ -332,6 +332,14 @@ body.p2m-page{margin:0;background:#fff;color:#1f2329;
 
   function setupMina(root) {
     log("setupMina: 开始");
+    // 书签已点，落地页的 hash 提示使命完成：清掉，避免面板起来后地址栏还留着误导。
+    // 只清我们自己加的那一个，别动用户可能带的其他 fragment。
+    try {
+      if (location.hash === C.BOOKMARKLET_HASH) {
+        history.replaceState(null, "", location.pathname + location.search);
+        log("setupMina: 已清除地址栏 hash 提示");
+      }
+    } catch (_) { /* replaceState 不可用也无妨，只是少句提示清理 */ }
     buildPanel(root);
     // 登录弹窗完成 → 重新探测（不做任何自动停止，原则：不打断在播内容）
     // 每次重绘都会替换旧监听，避免多次点书签后累积、且旧闭包操作已移除的节点
